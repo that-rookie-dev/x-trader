@@ -107,17 +107,27 @@ export function compareEod(algoClose: number, aiClose: number, algoBias: Forecas
   const delta = aiClose - algoClose;
   const rel = Math.abs(delta) / mid;
   const same = algoBias === aiBias;
-  const tag = same ? (rel <= 0.0015 ? "MATCH" : rel <= 0.004 ? "NEAR" : "WIDE") : rel <= 0.004 ? "SPLIT" : "CLASH";
+  /** Labels are about direction agreement + how far the two closes sit, not identical prints. */
+  const tag = same
+    ? rel <= 0.0015
+      ? "ALIGNED"
+      : rel <= 0.004
+        ? "LEAN"
+        : "STRETCH"
+    : rel <= 0.004
+      ? "MIXED"
+      : "OPPOSED";
+  const gap = `${(rel * 100).toFixed(2)}% apart`;
   const hint =
-    tag === "MATCH"
-      ? "same call"
-      : tag === "NEAR"
-        ? "same side"
-        : tag === "WIDE"
-          ? "same side, gap"
-          : tag === "SPLIT"
-            ? "mixed view"
-            : "opposite call";
+    tag === "ALIGNED"
+      ? `same direction · ${gap}`
+      : tag === "LEAN"
+        ? `same direction · small gap · ${gap}`
+        : tag === "STRETCH"
+          ? `same direction · wider targets · ${gap}`
+          : tag === "MIXED"
+            ? `different direction · closes near · ${gap}`
+            : `different direction · ${gap}`;
   return { agree: same || rel <= 0.0015, delta: money(delta, 2), tag, hint };
 }
 

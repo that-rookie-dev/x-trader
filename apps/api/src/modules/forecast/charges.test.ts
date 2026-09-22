@@ -163,10 +163,26 @@ describe("AI study close clamp", () => {
   });
 
   it("labels algo vs AI closeness", () => {
-    expect(compareEod(23340, 23320, "BEARISH", "BEARISH")).toMatchObject({ tag: "MATCH", hint: "same call" });
-    expect(compareEod(23340, 23420, "BEARISH", "BEARISH")).toMatchObject({ tag: "NEAR", hint: "same side" });
-    expect(compareEod(23340, 23500, "BEARISH", "BEARISH")).toMatchObject({ tag: "WIDE", hint: "same side, gap" });
-    expect(compareEod(23340, 23380, "BEARISH", "BULLISH")).toMatchObject({ tag: "SPLIT", hint: "mixed view" });
-    expect(compareEod(23340, 23600, "BEARISH", "BULLISH")).toMatchObject({ tag: "CLASH", hint: "opposite call", agree: false });
+    expect(compareEod(23340, 23320, "BEARISH", "BEARISH")).toMatchObject({
+      tag: "ALIGNED",
+      hint: expect.stringMatching(/same direction/),
+    });
+    expect(compareEod(23340, 23420, "BEARISH", "BEARISH")).toMatchObject({
+      tag: "LEAN",
+      hint: expect.stringMatching(/same direction · small gap/),
+    });
+    expect(compareEod(23340, 23500, "BEARISH", "BEARISH")).toMatchObject({
+      tag: "STRETCH",
+      hint: expect.stringMatching(/wider targets/),
+    });
+    expect(compareEod(23340, 23380, "BEARISH", "BULLISH")).toMatchObject({
+      tag: "MIXED",
+      hint: expect.stringMatching(/different direction · closes near/),
+    });
+    expect(compareEod(23340, 23600, "BEARISH", "BULLISH")).toMatchObject({
+      tag: "OPPOSED",
+      hint: expect.stringMatching(/different direction/),
+      agree: false,
+    });
   });
 });

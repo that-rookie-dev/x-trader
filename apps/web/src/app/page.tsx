@@ -752,10 +752,10 @@ function chartLines(board: OptionsBoard | null): ChartLine[] {
 }
 
 function vsView(compare?: OptionsBoard["compare"]) {
-  if (!compare) return { tag: "IDLE", hint: "study first", tone: "idle" };
-  const tag = compare.tag ?? (compare.agree ? "MATCH" : "CLASH");
-  const hint = compare.hint ?? (compare.agree ? "same call" : "opposite call");
-  const tone = tag === "MATCH" || tag === "NEAR" ? "yes" : tag === "WIDE" ? "wide" : "no";
+  if (!compare) return { tag: "IDLE", hint: "run study", tone: "idle" };
+  const tag = compare.tag ?? (compare.agree ? "ALIGNED" : "OPPOSED");
+  const hint = compare.hint ?? (compare.agree ? "same direction" : "different direction");
+  const tone = tag === "ALIGNED" || tag === "LEAN" || tag === "MATCH" || tag === "NEAR" ? "yes" : tag === "STRETCH" || tag === "WIDE" ? "wide" : "no";
   return { tag, hint, tone };
 }
 
