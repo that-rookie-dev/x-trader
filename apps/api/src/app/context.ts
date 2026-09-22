@@ -1,0 +1,44 @@
+import type { Env } from "../config/env.js";
+import type { Logger } from "../config/logger.js";
+import type { Database, SqlClient } from "../db/client.js";
+import type { CryptoService } from "../security/crypto.js";
+import type { SessionService } from "../modules/auth/session.js";
+import type { ZerodhaAuthService } from "../modules/brokers/zerodha/auth-service.js";
+import type { ZerodhaReadAdapter } from "../modules/brokers/zerodha/read-adapter.js";
+import type { KiteGateway } from "../modules/brokers/zerodha/kite-gateway.js";
+import type { MarketDataService } from "../modules/market/service.js";
+import type { RiskService } from "../modules/risk/service.js";
+import type { PaperExecutionAdapter } from "../modules/execution/paper-adapter.js";
+import type { ZerodhaOrderAdapter } from "../modules/execution/zerodha-order-adapter.js";
+import type { ExecutionCoordinator } from "../modules/execution/coordinator.js";
+import type { LiveGate } from "../modules/settings/live-gate.js";
+import type { AiService } from "../modules/ai/service.js";
+import type { JournalService } from "../modules/journal/service.js";
+import type { StrategyEngine } from "../modules/strategy/engine.js";
+import type { ResearchService } from "../modules/research/service.js";
+import type { ForecastEngine } from "../modules/forecast/engine.js";
+import type { AgentLoop } from "../modules/agent/loop.js";
+
+export interface AppServices {
+  env: Env;
+  log: Logger;
+  db: Database;
+  sql: SqlClient;
+  crypto: CryptoService;
+  sessions: SessionService;
+  kite: KiteGateway;
+  auth: ZerodhaAuthService;
+  read: ZerodhaReadAdapter;
+  market: MarketDataService;
+  risk: RiskService;
+  paper: PaperExecutionAdapter;
+  live: ZerodhaOrderAdapter;
+  execution: ExecutionCoordinator;
+  gate: LiveGate;
+  ai: AiService;
+  journal: JournalService;
+  strategy: StrategyEngine;
+  research: ResearchService;
+  forecasts: ForecastEngine;
+  agent: AgentLoop;
+}

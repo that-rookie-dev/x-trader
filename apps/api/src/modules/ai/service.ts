@@ -1,0 +1,455 @@
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGroq } from "@ai-sdk/groq";
+import { generateObject, generateText, type LanguageModel } from "ai";
+import { eq } from "drizzle-orm";
+import { AppError, aiStudyDraftSchema, strategyDecisionSchema, type AiStudyDraft, type StrategyDecision } from "@xtrader/domain";
+import type { Database } from "../../db/client.js";
+import { agentDecisions, aiProfiles, appSettings } from "../../db/schema.js";
+import type { CryptoService } from "../../security/crypto.js";
+import { AVAILABLE_PROVIDERS, getProvider } from "./catalog.js";
+import { listProviderModels, validateProvider } from "./transport.js";
+import { isOpencodeFamily, opencodeHeaders, usesOpencodeAnthropicWire } from "./opencode-route.js";
+
+const PLACEHOLDER_KEYS = new Set(["", "no-key-needed", "no-api-key-required", "***", "********"]);
+
+export class AiService {
+  constructor(
+    private readonly db: Database,
+    private readonly crypto: CryptoService,
+  ) {}
+
+  catalog() {
+    return AVAILABLE_PROVIDERS;
+  }
+
+  async list() {
+    const rows = await this.db.select().from(aiProfiles);
+    return rows.map((r) => {
+      const info = getProvider(r.kind);
+      return {
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        providerName: info?.name ?? r.kind,
+        type: info?.type ?? "cloud",
+        modelId: r.modelId,
+        baseUrl: r.baseUrl,
+        isActive: r.isActive,
+        hasKey: Boolean(r.ciphertext),
+        createdAt: r.createdAt.toISOString(),
+      };
+    });
+  }
+
+  async upsert(input: {
+    id?: string;
+    name: string;
+    kind: string;
+    modelId?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    activate?: boolean;
+  }) {
+    const info = getProvider(input.kind);
+    if (!info) throw new AppError("UNKNOWN_PROVIDER", `Unknown provider ${input.kind}`, 400);
+    const name = input.name.trim();
+    if (!name) throw new AppError("PROFILE_NAME_REQUIRED", "Profile name is required.", 400);
+
+    let blob: {
+      ciphertext: string | null;
+      nonce: string | null;
+      authTag: string | null;
+      keyVersion: number | null;
+    } = { ciphertext: null, nonce: null, authTag: null, keyVersion: null };
+    const key = input.apiKey?.trim() ?? "";
+    if (key && !PLACEHOLDER_KEYS.has(key) && !key.includes("•")) {
+      const enc = this.crypto.encrypt(key);
+      blob = { ciphertext: enc.ciphertext, nonce: enc.nonce, authTag: enc.authTag, keyVersion: enc.keyVersion };
+    }
+
+    const baseUrl = input.baseUrl ?? (info.defaultBaseUrl || null);
+    const modelId = input.modelId?.trim() ?? "";
+
+    if (input.id) {
+      await this.db
+        .update(aiProfiles)
+        .set({
+          name,
+          kind: input.kind,
+          modelId,
+          baseUrl,
+          ...(key && !PLACEHOLDER_KEYS.has(key) ? blob : {}),
+        })
+        .where(eq(aiProfiles.id, input.id));
+    } else {
+      const [row] = await this.db
+        .insert(aiProfiles)
+        .values({
+          name,
+          kind: input.kind,
+          modelId,
+          baseUrl,
+          ...blob,
+        })
+        .returning();
+      input.id = row!.id;
+    }
+    if (input.activate && modelId) await this.activate(input.id!);
+    return this.list();
+  }
+
+  async rename(id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new AppError("PROFILE_NAME_REQUIRED", "Profile name is required.", 400);
+    await this.db.update(aiProfiles).set({ name: trimmed }).where(eq(aiProfiles.id, id));
+    return this.list();
+  }
+
+  async activate(id: string) {
+    const [row] = await this.db.select().from(aiProfiles).where(eq(aiProfiles.id, id)).limit(1);
+    if (!row) throw new AppError("PROFILE_NOT_FOUND", "Profile not found", 404);
+    if (!row.modelId) throw new AppError("MODEL_REQUIRED", "Choose a model for this profile first.", 422);
+    await this.db.update(aiProfiles).set({ isActive: false });
+    await this.db.update(aiProfiles).set({ isActive: true }).where(eq(aiProfiles.id, id));
+    await this.db.update(appSettings).set({ activeAiProfileId: id, updatedAt: new Date() }).where(eq(appSettings.id, 1));
+    return this.list();
+  }
+
+  async setModel(id: string, modelId: string) {
+    const trimmed = modelId.trim();
+    if (!trimmed) throw new AppError("MODEL_REQUIRED", "Model id is required.", 400);
+    await this.db.update(aiProfiles).set({ modelId: trimmed }).where(eq(aiProfiles.id, id));
+    return this.list();
+  }
+
+  async remove(id: string) {
+    const [row] = await this.db.select().from(aiProfiles).where(eq(aiProfiles.id, id)).limit(1);
+    if (row?.isActive) {
+      const others = await this.db.select().from(aiProfiles);
+      if (others.length <= 1) {
+        throw new AppError("LAST_PROFILE", "Keep at least one profile, or add another before deleting the active one.", 409);
+      }
+    }
+    await this.db.delete(aiProfiles).where(eq(aiProfiles.id, id));
+    return this.list();
+  }
+
+  decryptKey(row: { ciphertext: string | null; nonce: string | null; authTag: string | null; keyVersion: number | null }): string {
+    if (!row.ciphertext || !row.nonce || !row.authTag || row.keyVersion == null) return "";
+    return this.crypto.decrypt({
+      ciphertext: row.ciphertext,
+      nonce: row.nonce,
+      authTag: row.authTag,
+      keyVersion: row.keyVersion,
+    });
+  }
+
+  async validateDraft(input: { providerId: string; apiKey?: string; baseUrl?: string; profileId?: string }) {
+    let apiKey = input.apiKey;
+    let baseUrl = input.baseUrl;
+    if (input.profileId && (!apiKey || PLACEHOLDER_KEYS.has(apiKey))) {
+      const [row] = await this.db.select().from(aiProfiles).where(eq(aiProfiles.id, input.profileId)).limit(1);
+      if (row) {
+        apiKey = this.decryptKey(row) || apiKey;
+        baseUrl = baseUrl || row.baseUrl || undefined;
+      }
+    }
+    return validateProvider({ providerId: input.providerId, apiKey, baseUrl });
+  }
+
+  async modelsFor(input: { providerId: string; apiKey?: string; baseUrl?: string; profileId?: string }) {
+    let apiKey = input.apiKey;
+    let baseUrl = input.baseUrl;
+    if (input.profileId) {
+      const [row] = await this.db.select().from(aiProfiles).where(eq(aiProfiles.id, input.profileId)).limit(1);
+      if (row) {
+        if (!apiKey || PLACEHOLDER_KEYS.has(apiKey)) apiKey = this.decryptKey(row);
+        baseUrl = baseUrl || row.baseUrl || undefined;
+      }
+    }
+    return listProviderModels({ providerId: input.providerId, apiKey, baseUrl, profileId: input.profileId });
+  }
+
+  async testConnection(id: string, modelId?: string): Promise<{
+    ok: boolean;
+    message: string;
+    latencyMs: number;
+    model: string;
+    sample?: string;
+  }> {
+    return this.ping(id, modelId);
+  }
+
+  async ping(id: string, modelId?: string): Promise<{
+    ok: boolean;
+    message: string;
+    latencyMs: number;
+    model: string;
+    sample?: string;
+  }> {
+    const [row] = await this.db.select().from(aiProfiles).where(eq(aiProfiles.id, id)).limit(1);
+    if (!row) throw new AppError("PROFILE_NOT_FOUND", "Profile not found", 404);
+    const mid = (modelId ?? row.modelId).trim();
+    if (!mid) {
+      return { ok: false, message: "Pick a model first, then test it.", latencyMs: 0, model: "" };
+    }
+    const started = Date.now();
+    try {
+      const model = this.languageModel(row, mid);
+      const { text } = await generateText({
+        model,
+        prompt: "Reply with exactly the word PONG and nothing else.",
+      });
+      const sample = text.trim().slice(0, 240);
+      const latencyMs = Date.now() - started;
+      const failed =
+        !sample ||
+        /subscription is required|invalid api key|unauthorized|401|403|missing x-opencode-session/i.test(sample);
+      if (failed) {
+        return { ok: false, message: sample || "Empty model reply.", latencyMs, model: mid, sample };
+      }
+      return {
+        ok: true,
+        message: `Live reply in ${latencyMs}ms from ${mid}.`,
+        latencyMs,
+        model: mid,
+        sample,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Model test failed",
+        latencyMs: Date.now() - started,
+        model: mid,
+      };
+    }
+  }
+
+  async tryNarrate(system: string, prompt: string): Promise<string | null> {
+    const started = Date.now();
+    const active = await this.activeRow();
+    try {
+      const model = await this.model();
+      const { text } = await generateText({
+        model,
+        system,
+        prompt: prompt.slice(0, 12_000),
+      });
+      const note = text.trim() || null;
+      await this.db.insert(agentDecisions).values({
+        profileId: active?.id ?? null,
+        inputSnapshot: { kind: "forecast-narrate" },
+        output: { note: note ?? "" },
+        latencyMs: Date.now() - started,
+        provider: active?.kind ?? null,
+        model: active?.modelId ?? null,
+      });
+      return note;
+    } catch (error) {
+      await this.db.insert(agentDecisions).values({
+        profileId: active?.id ?? null,
+        inputSnapshot: { kind: "forecast-narrate" },
+        output: {
+          decision: "NO_TRADE",
+          reasonCode: "AI_FAILURE",
+          explanation: error instanceof Error ? error.message : "Model failed",
+        },
+        latencyMs: Date.now() - started,
+        provider: active?.kind ?? null,
+        model: active?.modelId ?? null,
+      });
+      return null;
+    }
+  }
+
+  async studyEod(input: {
+    symbol: string;
+    last: number;
+    band: { low: number; high: number; magnet: number };
+    levels?: {
+      supports: string[];
+      resistances: string[];
+      pivot: number | null;
+      priorHigh: number | null;
+      priorLow: number | null;
+      priorClose: number | null;
+    };
+    algo: { bias: string; close: string; confidence: number; score?: number; signals?: string[] };
+    technical: string;
+    headlines: Array<{ title: string; snippet?: string }>;
+    pages: Array<{ title?: string; text: string }>;
+    atm: number | null;
+  }): Promise<{ draft: AiStudyDraft | null; error?: string }> {
+    const started = Date.now();
+    const active = await this.activeRow();
+    if (!active) return { draft: null, error: "No active AI profile. Add and activate one in Settings." };
+    if (!active.modelId) return { draft: null, error: "Active profile has no model selected." };
+    try {
+      const model = await this.model();
+      const { text } = await generateText({
+        model,
+        maxRetries: 0,
+        system: `You are xTrader's session study desk for Indian cash + F&O.
+Read the news and tape. Reply with a single JSON object, no markdown.
+Keys: direction (BULLISH|BEARISH|RANGE), pull (0-1), closeHint (number near the band), confidence (0-1), peStrike (number or null), ceStrike (number or null), why (string), catalysts (string[]), skip (boolean).
+Rules:
+- pull: bearish 0.25-0.35, range 0.5, bullish 0.65-0.75.
+- closeHint must stay near the given band and respect CPR, VWAP, support and resistance.
+- Treat supports and CPR BC as floors, resistances and CPR TC as ceilings. Prefer a close at the next level in your direction.
+- Weight the algorithm score and named signals; do not invent levels.
+- PE strike at or below spot. CE strike at or above spot.
+- why: 2 short sentences naming the level you are using. catalysts: real headlines only.
+- You never place orders.`,
+        prompt: JSON.stringify({
+          symbol: input.symbol,
+          spot: input.last,
+          band: input.band,
+          levels: input.levels ?? null,
+          algorithm: input.algo,
+          technical: input.technical,
+          atm: input.atm,
+          headlines: input.headlines.slice(0, 8),
+          pages: input.pages.slice(0, 3).map((p) => ({ title: p.title, text: p.text.slice(0, 900) })),
+        }).slice(0, 12_000),
+      });
+      const parsed = aiStudyDraftSchema.safeParse(extractJson(text));
+      if (!parsed.success) {
+        const error = "Model replied, but the study JSON was not usable.";
+        await this.db.insert(agentDecisions).values({
+          profileId: active.id,
+          inputSnapshot: { kind: "eod-study", symbol: input.symbol },
+          output: { reasonCode: "AI_PARSE", explanation: error, raw: text.slice(0, 800) },
+          latencyMs: Date.now() - started,
+          provider: active.kind,
+          model: active.modelId,
+        });
+        return { draft: null, error };
+      }
+      await this.db.insert(agentDecisions).values({
+        profileId: active.id,
+        inputSnapshot: { kind: "eod-study", symbol: input.symbol },
+        output: parsed.data as unknown as Record<string, unknown>,
+        latencyMs: Date.now() - started,
+        provider: active.kind,
+        model: active.modelId,
+      });
+      return { draft: parsed.data };
+    } catch (error) {
+      const message = shortModelError(error);
+      await this.db.insert(agentDecisions).values({
+        profileId: active.id,
+        inputSnapshot: { kind: "eod-study", symbol: input.symbol },
+        output: { reasonCode: "AI_FAILURE", explanation: message },
+        latencyMs: Date.now() - started,
+        provider: active.kind,
+        model: active.modelId,
+      });
+      return { draft: null, error: message };
+    }
+  }
+
+  async analyse(context: Record<string, unknown>): Promise<StrategyDecision> {
+    const model = await this.model();
+    const started = Date.now();
+    const active = await this.activeRow();
+    try {
+      const { object } = await generateObject({
+        model,
+        schema: strategyDecisionSchema,
+        system: `You are the xTrader analysis engine. You propose TRADE or NO_TRADE.
+You never place orders. You never change risk limits. Equity long-only, intraday.
+If data is insufficient, return NO_TRADE. JSON only matching the schema.`,
+        prompt: JSON.stringify(context).slice(0, 12_000),
+      });
+      await this.db.insert(agentDecisions).values({
+        profileId: active?.id ?? null,
+        inputSnapshot: context,
+        output: object as unknown as Record<string, unknown>,
+        latencyMs: Date.now() - started,
+        provider: active?.kind ?? null,
+        model: active?.modelId ?? null,
+      });
+      return object;
+    } catch (error) {
+      const noTrade: StrategyDecision = {
+        decision: "NO_TRADE",
+        reasonCode: "AI_FAILURE",
+        explanation: error instanceof Error ? error.message : "Model failed",
+      };
+      await this.db.insert(agentDecisions).values({
+        profileId: active?.id ?? null,
+        inputSnapshot: context,
+        output: noTrade as unknown as Record<string, unknown>,
+        latencyMs: Date.now() - started,
+        provider: active?.kind ?? null,
+        model: active?.modelId ?? null,
+      });
+      return noTrade;
+    }
+  }
+
+  private async activeRow() {
+    const [row] = await this.db.select().from(aiProfiles).where(eq(aiProfiles.isActive, true)).limit(1);
+    return row ?? null;
+  }
+
+  private async model(): Promise<LanguageModel> {
+    const row = await this.activeRow();
+    if (!row) throw new AppError("NO_AI_PROFILE", "No active AI profile. Add one in Settings.", 422);
+    if (!row.modelId) throw new AppError("MODEL_REQUIRED", "Active profile has no model selected.", 422);
+    return this.languageModel(row, row.modelId);
+  }
+
+  private languageModel(
+    row: { id: string; kind: string; modelId: string; baseUrl: string | null; ciphertext: string | null; nonce: string | null; authTag: string | null; keyVersion: number | null },
+    modelId: string,
+  ): LanguageModel {
+    const apiKey = this.decryptKey(row) || "local";
+    const baseURL = row.baseUrl || getProvider(row.kind)?.defaultBaseUrl || undefined;
+    const extraHeaders = isOpencodeFamily(row.kind) ? opencodeHeaders(row.id) : undefined;
+    switch (row.kind) {
+      case "anthropic":
+        return createAnthropic({ apiKey, headers: extraHeaders })(modelId);
+      case "google":
+        return createGoogleGenerativeAI({ apiKey })(modelId);
+      case "groq":
+        return createGroq({ apiKey })(modelId);
+      default:
+        if (usesOpencodeAnthropicWire(row.kind, modelId)) {
+          return createAnthropic({
+            apiKey,
+            baseURL: baseURL || "https://opencode.ai/zen/go/v1",
+            headers: extraHeaders,
+          })(modelId);
+        }
+        return createOpenAI({
+          apiKey,
+          baseURL,
+          compatibility: row.kind === "openai" ? "strict" : "compatible",
+          headers: extraHeaders,
+        }).chat(modelId);
+    }
+  }
+}
+
+function extractJson(text: string): unknown {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function shortModelError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : "Study failed";
+  if (/quota|rate-limit|rate limit|429/i.test(raw)) {
+    return "Google quota is used up for this model. Wait a minute, or switch provider in Settings, then Study now.";
+  }
+  if (/NO_AI_PROFILE|no active/i.test(raw)) return "No active AI profile. Add and activate one in Settings.";
+  return raw.slice(0, 280);
+}

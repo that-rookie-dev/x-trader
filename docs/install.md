@@ -1,0 +1,33 @@
+# Install (no Docker)
+
+xTrader ships Node, the built apps, and PostgreSQL binaries inside a GitHub Release. Nothing is installed via Docker.
+
+## From a release
+
+```bash
+curl -fsSL https://github.com/<owner>/xtrader/releases/latest/download/install.sh -o install.sh
+chmod +x install.sh
+./install.sh
+```
+
+The script:
+
+1. Detects `linux-x64`, `linux-arm64`, `darwin-arm64`, or `darwin-x64`
+2. Unpacks into `$HOME/.xtrader`
+3. Writes `.env` if missing (you must still paste Kite keys)
+4. Installs a systemd user unit (Linux) or launchd agent (macOS)
+5. Prints `http://127.0.0.1:3000`
+
+Bind address defaults to `127.0.0.1`. For a VPS, set `APP_BIND=0.0.0.0` and put the host behind Tailscale or SSH tunneling. Zerodha login is the only web authentication.
+
+## Recover a session
+
+Click **Reconnect Zerodha** in the UI. Only the same linked client is accepted. To wipe cookies and expire broker sessions on the server:
+
+```bash
+~/.xtrader/bin/xtrader session reset
+```
+
+## Live orders
+
+Zerodha rejects order place/modify/cancel unless the request egress IP is whitelisted as static. Confirm that IP in Settings after the process is running on the VPS.
