@@ -20,6 +20,7 @@ import {
 } from "./levels.js";
 import { applyAiStudy, predictEodSpot } from "./eod.js";
 import { buildDeskModel } from "./model.js";
+import { equityToIdea, scoreEquity } from "./equity.js";
 
 export class ForecastEngine {
   constructor(
@@ -145,7 +146,7 @@ export class ForecastEngine {
 
     const callPx = deriv.call ? await this.market.freshLtp("NFO", deriv.call.tradingsymbol) : null;
     const putPx = deriv.put ? await this.market.freshLtp("NFO", deriv.put.tradingsymbol) : null;
-    const suggestions = buildSuggestions({
+    const rawIdeas = buildSuggestions({
       symbol,
       instrumentType,
       bias,
@@ -167,6 +168,20 @@ export class ForecastEngine {
       callPx,
       putPx,
     });
+    let suggestions = rawIdeas;
+    if (instrumentType === "EQUITY") {
+      const nifty = await this.market.listCandles("NSE", "NIFTY 50", 1440, 260);
+      const scored = scoreEquity({
+        symbol,
+        exchange,
+        last,
+        daily,
+        niftyCloses: nifty.map((c) => c.close),
+        newsScore: research.newsScore,
+        regime,
+      });
+      suggestions = [...rawIdeas.filter((idea) => idea.lane === "FNO"), equityToIdea(scored)];
+    }
     const primary =
       suggestions.find((s) => s.action === "SELL" && s.lane === "FNO") ??
       suggestions.find((s) => s.action === "BUY" && s.primary) ??
@@ -197,6 +212,12 @@ export class ForecastEngine {
         technical: model.summary,
         history: `${series.length} bars from Kite (${daily.length} daily, ${fifteen.length} 15m, ${five.length} 5m).`,
         news: research.summary,
+        desk: {
+          votes: model.signals.map((s) => ({ name: s.name, vote: s.vote, detail: s.detail })),
+          vwap: model.vwap != null ? money(model.vwap, 2) : null,
+          orbHigh: model.orb ? money(model.orb.high, 2) : null,
+          orbLow: model.orb ? money(model.orb.low, 2) : null,
+        },
       },
       copilotAction: primary
         ? `On Zerodha, search ${primary.contract}. ${primary.action} · ${primary.why}${primary.exit ? ` ${primary.exit}` : ""}`

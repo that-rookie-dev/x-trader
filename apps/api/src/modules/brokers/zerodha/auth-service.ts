@@ -1,4 +1,4 @@
-import { AppError, money, type BrokerProfile, type Funds, type Holding, type PositionSnapshot } from "@xtrader/domain";
+import { AppError, money, type BrokerOrder, type BrokerProfile, type Funds, type Holding, type PositionSnapshot } from "@xtrader/domain";
 import { and, desc, eq } from "drizzle-orm";
 import type { Response } from "express";
 import type { Env } from "../../../config/env.js";
@@ -332,6 +332,29 @@ export function mapHoldings(rows: unknown[]): Holding[] {
       product: r.product != null ? String(r.product) : undefined,
     };
   });
+}
+
+export function mapOrders(rows: unknown[]): BrokerOrder[] {
+  return rows
+    .map((row) => {
+      const r = row as Record<string, unknown>;
+      const side = String(r.transaction_type ?? "BUY").toUpperCase() === "SELL" ? "SELL" : "BUY";
+      return {
+        brokerOrderId: String(r.order_id ?? ""),
+        status: String(r.status ?? "UNKNOWN"),
+        exchange: String(r.exchange ?? ""),
+        symbol: String(r.tradingsymbol ?? r.symbol ?? ""),
+        quantity: Number(r.quantity ?? 0),
+        filledQuantity: Number(r.filled_quantity ?? 0),
+        pendingQuantity: Number(r.pending_quantity ?? 0),
+        price: r.price != null ? money(Number(r.price)) : undefined,
+        averagePrice: r.average_price != null ? money(Number(r.average_price)) : undefined,
+        rawStatus: String(r.status ?? ""),
+        transactionType: side as "BUY" | "SELL",
+        orderTimestamp: r.order_timestamp != null ? String(r.order_timestamp) : r.exchange_timestamp != null ? String(r.exchange_timestamp) : undefined,
+      };
+    })
+    .filter((order) => Boolean(order.brokerOrderId));
 }
 
 export function mapPositions(payload: { net?: unknown[]; day?: unknown[] }): PositionSnapshot[] {

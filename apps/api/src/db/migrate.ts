@@ -338,6 +338,72 @@ export async function applySchema(client: SqlClient): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS forecast_key ON forecasts(exchange, symbol, horizon);
+    CREATE TABLE IF NOT EXISTS algo_marks (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      underlying text NOT NULL,
+      expiry text NOT NULL,
+      contract text NOT NULL,
+      kind text NOT NULL,
+      strike numeric(18,4) NOT NULL,
+      mark text NOT NULL,
+      why text NOT NULL DEFAULT '',
+      spot numeric(18,4),
+      premium numeric(18,4),
+      net numeric(18,4),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS algo_mark_key ON algo_marks(expiry, contract);
+    CREATE TABLE IF NOT EXISTS algo_signals (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      at timestamptz NOT NULL DEFAULT now(),
+      underlying text NOT NULL,
+      expiry text NOT NULL,
+      contract text NOT NULL,
+      kind text NOT NULL,
+      strike numeric(18,4) NOT NULL,
+      from_mark text NOT NULL,
+      to_mark text NOT NULL,
+      why text NOT NULL DEFAULT '',
+      spot numeric(18,4),
+      premium numeric(18,4),
+      net numeric(18,4)
+    );
+    CREATE INDEX IF NOT EXISTS algo_signals_und ON algo_signals(underlying, expiry, at DESC);
+    CREATE TABLE IF NOT EXISTS plays (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      at timestamptz NOT NULL DEFAULT now(),
+      lane text NOT NULL,
+      underlying text NOT NULL,
+      expiry text NOT NULL DEFAULT '',
+      contract text NOT NULL,
+      exchange text NOT NULL DEFAULT 'NFO',
+      kind text NOT NULL,
+      status text NOT NULL DEFAULT 'OPEN',
+      hold_until timestamptz NOT NULL,
+      payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+      dismissed_at timestamptz,
+      broker_order_id text,
+      fill_qty integer,
+      fill_px numeric(18,4),
+      closed_pnl numeric(18,4),
+      closed_at timestamptz,
+      regime text NOT NULL DEFAULT 'UNKNOWN',
+      horizon text NOT NULL DEFAULT 'SESSION',
+      setup_key text NOT NULL DEFAULT '',
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS plays_open ON plays(status, hold_until);
+    CREATE INDEX IF NOT EXISTS plays_und ON plays(underlying, expiry, at DESC);
+    CREATE TABLE IF NOT EXISTS vol_history (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      symbol text NOT NULL,
+      session_date text NOT NULL,
+      iv_atm numeric(10,6),
+      hv20 numeric(10,6),
+      hv60 numeric(10,6),
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS vol_history_day ON vol_history(symbol, session_date);
     ALTER TABLE watchlist_items ADD COLUMN IF NOT EXISTS auto_enabled boolean NOT NULL DEFAULT false;
     UPDATE app_settings SET agent_mode = 'COPILOT' WHERE agent_mode IN ('MANUAL', 'COPILOT');
     UPDATE app_settings SET agent_mode = 'AUTO' WHERE agent_mode IN ('AUTONOMOUS', 'AUTO');

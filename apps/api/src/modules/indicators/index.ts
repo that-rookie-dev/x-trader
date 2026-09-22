@@ -123,6 +123,175 @@ export function centralPivotRange(prior: { high: number; low: number; close: num
   };
 }
 
+export function adx(
+  candles: Array<{ high: number; low: number; close: number }>,
+  period = 14,
+): { adx: number; plusDi: number; minusDi: number } | null {
+  if (candles.length < period * 2 + 1) return null;
+  const plusDm: number[] = [];
+  const minusDm: number[] = [];
+  const tr: number[] = [];
+  for (let i = 1; i < candles.length; i += 1) {
+    const up = candles[i]!.high - candles[i - 1]!.high;
+    const down = candles[i - 1]!.low - candles[i]!.low;
+    plusDm.push(up > down && up > 0 ? up : 0);
+    minusDm.push(down > up && down > 0 ? down : 0);
+    const high = candles[i]!.high;
+    const low = candles[i]!.low;
+    const prevClose = candles[i - 1]!.close;
+    tr.push(Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose)));
+  }
+  const wilder = (arr: number[], p: number) => {
+    let prev = arr.slice(0, p).reduce((a, b) => a + b, 0);
+    const out = [prev];
+    for (let i = p; i < arr.length; i += 1) {
+      prev = prev - prev / p + arr[i]!;
+      out.push(prev);
+    }
+    return out;
+  };
+  const trS = wilder(tr, period);
+  const pS = wilder(plusDm, period);
+  const mS = wilder(minusDm, period);
+  const dx: number[] = [];
+  for (let i = 0; i < trS.length; i += 1) {
+    const plusDi = trS[i]! > 0 ? (100 * pS[i]!) / trS[i]! : 0;
+    const minusDi = trS[i]! > 0 ? (100 * mS[i]!) / trS[i]! : 0;
+    const den = plusDi + minusDi;
+    dx.push(den > 0 ? (100 * Math.abs(plusDi - minusDi)) / den : 0);
+  }
+  const adxVal = sma(dx, period);
+  if (adxVal == null) return null;
+  const last = trS.length - 1;
+  return {
+    adx: adxVal,
+    plusDi: trS[last]! > 0 ? (100 * pS[last]!) / trS[last]! : 0,
+    minusDi: trS[last]! > 0 ? (100 * mS[last]!) / trS[last]! : 0,
+  };
+}
+
+export function donchian(
+  candles: Array<{ high: number; low: number }>,
+  period = 20,
+): { high: number; low: number; mid: number } | null {
+  if (candles.length < period) return null;
+  const slice = candles.slice(-period);
+  const high = Math.max(...slice.map((c) => c.high));
+  const low = Math.min(...slice.map((c) => c.low));
+  return { high, low, mid: (high + low) / 2 };
+}
+
+export function hv(closes: number[], period = 20, periodsPerYear = 252): number | null {
+  if (closes.length < period + 1) return null;
+  const slice = closes.slice(-(period + 1));
+  const rets: number[] = [];
+  for (let i = 1; i < slice.length; i += 1) {
+    if (slice[i - 1]! > 0 && slice[i]! > 0) rets.push(Math.log(slice[i]! / slice[i - 1]!));
+  }
+  if (rets.length < 2) return null;
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const variance = rets.reduce((a, b) => a + (b - mean) ** 2, 0) / (rets.length - 1);
+  return Math.sqrt(Math.max(variance, 0) * periodsPerYear);
+}
+
+export function bollinger(
+  closes: number[],
+  period = 20,
+  mult = 2,
+): { mid: number; upper: number; lower: number; pctB: number } | null {
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  const mid = slice.reduce((a, b) => a + b, 0) / period;
+  const sd = Math.sqrt(slice.reduce((a, b) => a + (b - mid) ** 2, 0) / period);
+  const upper = mid + mult * sd;
+  const lower = mid - mult * sd;
+  const last = closes[closes.length - 1]!;
+  const width = upper - lower;
+  return { mid, upper, lower, pctB: width > 0 ? (last - lower) / width : 0.5 };
+}
+
+function normCdf(x: number): number {
+  const a1 = 0.254829592;
+  const a2 = -0.284496736;
+  const a3 = 1.421413741;
+  const a4 = -1.453152027;
+  const a5 = 1.061405429;
+  const p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + p * Math.abs(x));
+  const y = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp((-x * x) / 2);
+  return 0.5 * (1 + sign * y);
+}
+
+function normPdf(x: number): number {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+}
+
+export function blackScholesPrice(
+  spot: number,
+  strike: number,
+  tYears: number,
+  vol: number,
+  kind: "CE" | "PE",
+  rate = 0.065,
+): number {
+  if (!(tYears > 0) || !(vol > 0)) return Math.max(kind === "CE" ? spot - strike : strike - spot, 0);
+  const srt = vol * Math.sqrt(tYears);
+  const d1 = (Math.log(spot / strike) + (rate + 0.5 * vol * vol) * tYears) / srt;
+  const d2 = d1 - srt;
+  const df = Math.exp(-rate * tYears);
+  if (kind === "CE") return spot * normCdf(d1) - strike * df * normCdf(d2);
+  return strike * df * normCdf(-d2) - spot * normCdf(-d1);
+}
+
+export function blackScholesIv(
+  premium: number,
+  spot: number,
+  strike: number,
+  tYears: number,
+  kind: "CE" | "PE",
+  rate = 0.065,
+): number | null {
+  if (!(premium > 0) || !(spot > 0) || !(strike > 0) || !(tYears > 0)) return null;
+  const intrinsic = Math.max(kind === "CE" ? spot - strike : strike - spot, 0);
+  if (premium + 1e-6 < intrinsic * 0.98) return null;
+  let sigma = 0.25;
+  for (let i = 0; i < 40; i += 1) {
+    const price = blackScholesPrice(spot, strike, tYears, sigma, kind, rate);
+    const srt = Math.max(sigma * Math.sqrt(tYears), 1e-8);
+    const d1 = (Math.log(spot / strike) + (rate + 0.5 * sigma * sigma) * tYears) / srt;
+    const vega = spot * normPdf(d1) * Math.sqrt(tYears);
+    if (vega < 1e-8) break;
+    const next = sigma - (price - premium) / vega;
+    if (!Number.isFinite(next)) break;
+    if (next <= 0.01) {
+      sigma = Math.max(0.02, sigma * 0.5);
+      continue;
+    }
+    if (Math.abs(next - sigma) < 1e-4) return next;
+    sigma = Math.min(3, next);
+  }
+  return Number.isFinite(sigma) && sigma > 0 ? sigma : null;
+}
+
+export function ivRank(current: number, history: number[]): number | null {
+  if (!history.length || !Number.isFinite(current)) return null;
+  const below = history.filter((value) => value <= current).length;
+  return below / history.length;
+}
+
+export function chandelierStop(
+  highs: number[],
+  atrValue: number,
+  mult = 2,
+  side: "long" | "short" = "long",
+  lows?: number[],
+): number | null {
+  if (!highs.length || !(atrValue > 0)) return null;
+  if (side === "long") return Math.max(...highs) - mult * atrValue;
+  return Math.min(...(lows ?? highs)) + mult * atrValue;
+}
+
 export type Regime = "STRONG_BULLISH" | "BULLISH" | "RANGE" | "BEARISH" | "STRONG_BEARISH" | "HIGH_VOLATILITY" | "UNKNOWN";
 
 export function classifyRegime(close: number[], atrValue: number | null): Regime {

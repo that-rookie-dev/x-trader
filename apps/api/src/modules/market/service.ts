@@ -28,6 +28,7 @@ export class MarketDataService extends EventEmitter {
   private subscribedTokens = new Set<number>();
   private tokenIndex = new Map<string, { id: string; symbol: string; exchange: string }>();
   private lastLtpRestAt = 0;
+  private lastDepth = new Map<string, { oi: number | null; volume: number | null; bid: number | null; ask: number | null; at: number }>();
 
   constructor(
     private readonly db: Database,
@@ -445,7 +446,17 @@ export class MarketDataService extends EventEmitter {
   }
 
   async quoteMany(items: Array<{ exchange: string; symbol: string }>): Promise<
-    Array<{ exchange: string; symbol: string; lastPrice: string | null; prevPrice: string | null; change: number | null }>
+    Array<{
+      exchange: string;
+      symbol: string;
+      lastPrice: string | null;
+      prevPrice: string | null;
+      change: number | null;
+      oi: number | null;
+      volume: number | null;
+      bid: number | null;
+      ask: number | null;
+    }>
   > {
     const unique = new Map(items.map((item) => [`${item.exchange}:${item.symbol}`, item]));
     const keys = [...unique.keys()];
@@ -453,24 +464,37 @@ export class MarketDataService extends EventEmitter {
     const live = new Map<string, number>();
     const stale: string[] = [];
     const now = Date.now();
+    const depthStale = keys.filter((key) => {
+      const depth = this.lastDepth.get(key);
+      return !depth || now - depth.at > 5000;
+    });
     for (const key of keys) {
       const tick = this.lastTick.get(key);
       const age = tick ? now - new Date(tick.receivedAt).getTime() : Number.POSITIVE_INFINITY;
       if (tick?.lastPrice && age <= 2000) live.set(key, Number(tick.lastPrice));
       else stale.push(key);
     }
-    if (access && stale.length && now - this.lastLtpRestAt >= 1000) {
+    const restKeys = [...new Set([...stale, ...depthStale])];
+    if (access && restKeys.length && now - this.lastLtpRestAt >= 1000) {
       this.lastLtpRestAt = now;
-      for (let i = 0; i < stale.length; i += 40) {
-        const chunk = stale.slice(i, i + 40);
+      for (let i = 0; i < restKeys.length; i += 40) {
+        const chunk = restKeys.slice(i, i + 40);
         try {
-          const quotes = await this.kite.getLTP(access.token, chunk);
+          const quotes = await this.kite.getQuote(access.token, chunk);
           for (const key of chunk) {
-            const px = quotes[key]?.last_price;
+            const q = quotes[key];
+            const px = q?.last_price;
             if (px != null) live.set(key, px);
+            this.lastDepth.set(key, {
+              oi: q?.oi != null ? Number(q.oi) : null,
+              volume: q?.volume != null ? Number(q.volume) : null,
+              bid: q?.depth?.buy?.[0]?.price != null ? Number(q.depth.buy[0].price) : null,
+              ask: q?.depth?.sell?.[0]?.price != null ? Number(q.depth.sell[0].price) : null,
+              at: now,
+            });
           }
         } catch (err) {
-          this.log.warn({ err, count: chunk.length }, "batch LTP failed");
+          this.log.warn({ err, count: chunk.length }, "batch quote failed");
         }
       }
     }
@@ -482,7 +506,18 @@ export class MarketDataService extends EventEmitter {
       if (livePx != null) await this.rememberQuote(item.exchange, item.symbol, lastPrice!);
       const change =
         lastPrice != null && prev != null && Number(prev) > 0 ? Number(((Number(lastPrice) - Number(prev)) / Number(prev)).toFixed(4)) : null;
-      out.push({ exchange: item.exchange, symbol: item.symbol, lastPrice, prevPrice: prev ?? null, change });
+      const depth = this.lastDepth.get(key);
+      out.push({
+        exchange: item.exchange,
+        symbol: item.symbol,
+        lastPrice,
+        prevPrice: prev ?? null,
+        change,
+        oi: depth?.oi ?? null,
+        volume: depth?.volume ?? null,
+        bid: depth?.bid ?? null,
+        ask: depth?.ask ?? null,
+      });
     }
     return out;
   }

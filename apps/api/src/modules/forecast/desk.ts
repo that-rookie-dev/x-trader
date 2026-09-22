@@ -69,6 +69,11 @@ export type PlainIdea = {
   target?: string | null;
   instrumentType: "EQUITY" | "OPTION" | "FUTURE";
   canPaper: boolean;
+  lastPrice?: string;
+  horizon?: "SWING" | "POSITION" | "INTRADAY";
+  rsVsNifty?: number | null;
+  atrStop?: string | null;
+  rank?: number | null;
 };
 
 export function visibleIdeas(
@@ -99,7 +104,11 @@ function toPlain(idea: Idea, paperHeld: Set<string>): PlainIdea {
     title:
       action === "BUY"
         ? idea.kind === "EQ"
-          ? "Buy today"
+          ? idea.horizon === "INTRADAY"
+            ? "Buy today"
+            : idea.horizon === "POSITION"
+              ? "Positional add"
+              : "Swing add"
           : `Buy ${labelOf(idea.kind)}`
         : action === "SELL"
           ? `Sell ${labelOf(idea.kind)}`
@@ -111,6 +120,10 @@ function toPlain(idea: Idea, paperHeld: Set<string>): PlainIdea {
     target: idea.target,
     instrumentType,
     canPaper: action === "BUY" || paperHeld.has(idea.contract.toUpperCase()),
+    horizon: idea.horizon,
+    rsVsNifty: idea.rsVsNifty,
+    atrStop: idea.atrStop ?? idea.stop,
+    rank: idea.rank,
   };
 }
 

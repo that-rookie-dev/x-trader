@@ -7,13 +7,13 @@ import type { AppServices } from "../app/context.js";
 import {
   friendlyDate,
   loadHeldKeys,
-  markContract,
   paperHeldSymbols,
   stanceLine,
   visibleIdeas,
 } from "../modules/forecast/desk.js";
-import { compareEod, eodTradeView, nearestStrike, predictEodSpot, viewAiStudy } from "../modules/forecast/eod.js";
+import { compareEod, predictEodSpot, viewAiStudy } from "../modules/forecast/eod.js";
 import { pickExpiringDesk } from "../modules/forecast/levels.js";
+import { buildOptionsBoard } from "../modules/forecast/board.js";
 
 export function registerRoutes(app: Express, s: AppServices): void {
   app.get("/api/health", (_req, res) => {
@@ -188,11 +188,17 @@ export function registerRoutes(app: Express, s: AppServices): void {
       send("hello", { ok: true });
       const onTick = (tick: { exchange: string; symbol: string; lastPrice: string; receivedAt: string }) =>
         send("tick", s.market.asQuote(tick));
+      const onSignal = (row: unknown) => send("signal", row);
+      const onPlay = (row: unknown) => send("play", row);
       s.market.on("tick", onTick);
+      s.market.on("signal", onSignal);
+      s.market.on("play", onPlay);
       const iv = setInterval(() => send("ping", { t: Date.now() }), 1000);
       req.on("close", () => {
         clearInterval(iv);
         s.market.off("tick", onTick);
+        s.market.off("signal", onSignal);
+        s.market.off("play", onPlay);
       });
     }),
   );
@@ -575,174 +581,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
       const exchange = String(req.query.exchange ?? "NSE");
       const symbol = String(req.query.symbol ?? "");
       const expiry = String(req.query.expiry ?? "") || null;
-      const stored = await s.forecasts.getStored(exchange, symbol);
-      const forecast = await s.forecasts.refreshOne(exchange, symbol, stored ? "live" : "full", expiry);
-      const spot = Number(forecast.lastPrice);
-      const chain = await s.market.listOptionChain(symbol, expiry ?? forecast.derivatives?.expiry ?? null, spot);
-      const held = await loadHeldKeys(s.db, s.read);
-      const paperHeld = await paperHeldSymbols(s.db);
-      const quoteItems = [
-        { exchange, symbol },
-        ...(chain.future ? [{ exchange: chain.future.exchange, symbol: chain.future.tradingsymbol }] : []),
-        ...chain.rows.flatMap((row) => [
-          row.ce ? { exchange: row.ce.exchange, symbol: row.ce.tradingsymbol } : null,
-          row.pe ? { exchange: row.pe.exchange, symbol: row.pe.tradingsymbol } : null,
-        ]),
-      ].filter((item): item is { exchange: string; symbol: string } => Boolean(item));
-      const quotes = await s.market.quoteMany(quoteItems);
-      const qmap = new Map(quotes.map((q) => [`${q.exchange}:${q.symbol}`, q]));
-      const settings = await s.gate.snapshot();
-      const ideas = forecast.suggestions ?? [];
-      const liveSpot = Number(qmap.get(`${exchange}:${symbol}`)?.lastPrice ?? forecast.lastPrice);
-      const sessionLive = {
-        last: liveSpot,
-        expectedLow: Number(forecast.session.expectedLow),
-        expectedHigh: Number(forecast.session.expectedHigh),
-        magnet: Number(forecast.session.magnet),
-      };
-      const supports = (forecast.path.supports ?? []).map(Number);
-      const resistances = (forecast.path.resistances ?? []).map(Number);
-      const eod = predictEodSpot({
-        last: liveSpot,
-        bias: forecast.bias,
-        expectedLow: sessionLive.expectedLow,
-        expectedHigh: sessionLive.expectedHigh,
-        magnet: sessionLive.magnet,
-        supports,
-        resistances,
-        pull: forecast.session.pull,
-      });
-      const ai = viewAiStudy(forecast.evidence.aiStudy, sessionLive);
-      const eodSpot = Number(eod.close);
-      const side = (
-        leg: { tradingsymbol: string; lotSize: number; exchange: string } | null,
-        kind: "CE" | "PE",
-        strike: number,
-      ) => {
-        if (!leg) return null;
-        const q = qmap.get(`${leg.exchange}:${leg.tradingsymbol}`);
-        const marked = markContract(ideas, held, paperHeld, leg.tradingsymbol, kind);
-        const premium = q?.lastPrice != null ? Number(q.lastPrice) : null;
-        const view = eodTradeView({
-          kind,
-          strike,
-          spot: liveSpot,
-          eodSpot,
-          premium,
-          expiry: chain.expiry,
-          lotSize: leg.lotSize || 1,
-          held: marked.mark === "SELL" || paperHeld.has(leg.tradingsymbol.toUpperCase()),
-          existing: marked.mark,
-        });
-        return {
-          symbol: leg.tradingsymbol,
-          exchange: leg.exchange,
-          lastPrice: q?.lastPrice ?? null,
-          prevPrice: q?.prevPrice ?? null,
-          change: q?.change ?? null,
-          mark: view.mark,
-          why: view.why,
-          canPaper: view.mark === "BUY" || (view.mark === "SELL" && paperHeld.has(leg.tradingsymbol.toUpperCase())),
-          lotSize: view.lotSize,
-          eodPremium: view.eodPremium,
-          moneyness: view.moneyness,
-          pnl: view.pnl,
-        };
-      };
-      const rows = chain.rows.map((row) => ({
-        strike: row.strike,
-        atm: row.atm,
-        ce: side(row.ce, "CE", row.strike),
-        pe: side(row.pe, "PE", row.strike),
-      }));
-      const future = chain.future
-        ? {
-            symbol: chain.future.tradingsymbol,
-            exchange: chain.future.exchange,
-            lastPrice: qmap.get(`${chain.future.exchange}:${chain.future.tradingsymbol}`)?.lastPrice ?? null,
-            ...markContract(ideas, held, paperHeld, chain.future.tradingsymbol, "FUT"),
-          }
-        : null;
-      const ranked = rows
-        .flatMap((row) => [
-          row.ce ? { kind: "CE" as const, strike: row.strike, leg: row.ce } : null,
-          row.pe ? { kind: "PE" as const, strike: row.strike, leg: row.pe } : null,
-        ])
-        .filter((item): item is NonNullable<typeof item> => Boolean(item));
-      const roi = (leg: { pnl: { net: string; buyNotional: string } }) => {
-        const cost = Number(leg.pnl.buyNotional);
-        return cost > 0 ? Number(leg.pnl.net) / cost : 0;
-      };
-      const buys = ranked
-        .filter((item) => item.leg.mark === "BUY")
-        .sort((a, b) => {
-          const byRoi = roi(b.leg) - roi(a.leg);
-          if (Math.abs(byRoi) > 0.01) return byRoi;
-          return Math.abs(a.strike - liveSpot) - Math.abs(b.strike - liveSpot);
-        })
-        .slice(0, 4)
-        .map((item) => ({
-          lane: "FNO" as const,
-          kind: item.kind,
-          action: "BUY" as const,
-          contract: item.leg.symbol,
-          exchange: item.leg.exchange,
-          label: item.kind,
-          title: `Buy ${item.kind} ${item.strike}`,
-          why: item.leg.why,
-          when: `Hold to EOD if spot stays near ${eod.close}.`,
-          premium: item.leg.lastPrice,
-          instrumentType: "OPTION" as const,
-          canPaper: item.leg.canPaper,
-          lastPrice: item.leg.lastPrice ?? undefined,
-        }));
-      const sells = visibleIdeas(ideas, held, paperHeld, "FNO").filter((idea) => idea.action === "SELL");
-      const listed = rows.map((row) => row.strike);
-      const aiPick = ai
-        ? ai.direction === "BEARISH"
-          ? { kind: "PE" as const, strike: nearestStrike(listed, ai.peStrike) }
-          : ai.direction === "BULLISH"
-            ? { kind: "CE" as const, strike: nearestStrike(listed, ai.ceStrike) }
-            : null
-        : null;
-      const compare =
-        ai != null
-          ? compareEod(Number(eod.close), Number(ai.close), forecast.bias, ai.direction)
-          : null;
-      void s.market.ensureHistoryPublic(exchange, symbol).catch(() => undefined);
-      res.json({
-        symbol,
-        exchange,
-        expiry: chain.expiry,
-        expiryLabel: friendlyDate(chain.expiry),
-        lastPrice: qmap.get(`${exchange}:${symbol}`)?.lastPrice ?? forecast.lastPrice,
-        change: qmap.get(`${exchange}:${symbol}`)?.change ?? null,
-        atm: chain.atm,
-        trust: Math.round(forecast.confidence * 100),
-        stance: stanceLine(forecast.bias),
-        bias: forecast.bias,
-        eod,
-        levels: {
-          supports: forecast.path.supports ?? [],
-          resistances: forecast.path.resistances ?? [],
-          magnet: forecast.session.magnet,
-        },
-        session: {
-          expectedLow: forecast.session.expectedLow,
-          expectedHigh: forecast.session.expectedHigh,
-          magnet: forecast.session.magnet,
-          pull: forecast.session.pull,
-        },
-        ai,
-        aiError: forecast.evidence.aiError ?? null,
-        compare,
-        aiPick,
-        future,
-        rows,
-        buys,
-        sells,
-        paperMode: settings.executionMode === "PAPER",
-      });
+      res.json(await buildOptionsBoard(s, { exchange, symbol, expiry }));
     }),
   );
 
@@ -805,6 +644,42 @@ export function registerRoutes(app: Express, s: AppServices): void {
   );
 
   app.get(
+    "/api/options/signals",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const symbol = String(req.query.symbol ?? "");
+      const expiry = String(req.query.expiry ?? "") || null;
+      res.json({
+        signals: symbol ? await s.signals.list(symbol, expiry) : [],
+        plays: symbol ? await s.plays.list({ underlying: symbol, expiry, limit: 20 }) : [],
+      });
+    }),
+  );
+
+  app.get(
+    "/api/plays",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const underlying = String(req.query.underlying ?? req.query.symbol ?? "") || undefined;
+      const expiry = String(req.query.expiry ?? "") || undefined;
+      res.json({ plays: await s.plays.list({ underlying, expiry, limit: 40 }) });
+    }),
+  );
+
+  app.post(
+    "/api/plays/:id/dismiss",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const play = await s.plays.dismiss(String(req.params.id));
+      if (!play) {
+        res.status(404).json({ error: { message: "play not found" } });
+        return;
+      }
+      res.json({ play });
+    }),
+  );
+
+  app.get(
     "/api/options/advice",
     s.sessions.middleware("optional"),
     asyncHandler(async (req, res) => {
@@ -837,21 +712,8 @@ export function registerRoutes(app: Express, s: AppServices): void {
     "/api/stocks/desk",
     s.sessions.middleware("optional"),
     asyncHandler(async (_req, res) => {
-      const items = await s.forecasts.latest();
-      const held = await loadHeldKeys(s.db, s.read);
-      const paperHeld = await paperHeldSymbols(s.db);
-      const buys: Array<ReturnType<typeof visibleIdeas>[number] & { lastPrice: string }> = [];
-      const sells: Array<ReturnType<typeof visibleIdeas>[number] & { lastPrice: string }> = [];
-      for (const item of items) {
-        if (item.instrument.instrumentType !== "EQUITY") continue;
-        for (const idea of visibleIdeas(item.suggestions ?? [], held, paperHeld, "CASH")) {
-          const row = { ...idea, lastPrice: item.lastPrice };
-          if (idea.action === "BUY") buys.push(row);
-          else sells.push(row);
-        }
-      }
-      const settings = await s.gate.snapshot();
-      res.json({ buys, sells, paperMode: settings.executionMode === "PAPER" });
+      const { buildStocksDesk } = await import("../modules/forecast/equity.js");
+      res.json(await buildStocksDesk({ ...s, plays: s.plays }));
     }),
   );
 

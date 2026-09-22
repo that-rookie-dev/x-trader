@@ -128,7 +128,40 @@ function fnoKey(exchange: string | undefined, symbol: string) {
   return `${exchange ?? "NFO"}:${symbol}`;
 }
 
-function repriceLeg(leg: ChainLeg, kind: "CE" | "PE", strike: number, spot: number, eodSpot: number, expiry: string | null): ChainLeg {
+function istMinutes(now: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  return Number(parts.find((p) => p.type === "hour")?.value ?? 0) * 60 + Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+}
+
+function sessionClock(now: Date, expiry: string | null) {
+  const mins = istMinutes(now);
+  const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const expiryToday = Boolean(expiry && expiry <= today);
+  const cutoff = expiryToday ? mins >= 13 * 60 + 30 : mins >= 15 * 60;
+  const late = mins >= 14 * 60 + 30;
+  return { cutoff, netFloor: cutoff ? 150 : late ? 250 : 150, label: cutoff ? "CUTOFF" : expiryToday ? "UNTIL 13:30" : "UNTIL 15:00" };
+}
+
+function mapInvalidated(bias: Bias, last: number, expectedLow: number, expectedHigh: number) {
+  if (bias === "BULLISH" && expectedLow > 0 && last < expectedLow * 0.998) return true;
+  if (bias === "BEARISH" && expectedHigh > 0 && last > expectedHigh * 1.002) return true;
+  return false;
+}
+
+function liquidEnough(oi?: number | null, volume?: number | null) {
+  if (oi == null && volume == null) return true;
+  return (oi != null && oi > 0) || (volume != null && volume > 0);
+}
+
+function repriceLeg(
+  leg: ChainLeg,
+  kind: "CE" | "PE",
+  strike: number,
+  spot: number,
+  eodSpot: number,
+  expiry: string | null,
+  gates: { cutoff: boolean; netFloor: number; invalidated: boolean },
+): ChainLeg {
   const premium = leg.lastPrice != null ? Number(leg.lastPrice) : null;
   const est = estimateOptionEod({ kind, strike, spot, eodSpot, premium, expiry });
   const entry = premium != null && premium > 0 ? premium : Number(est.eodPremium);
@@ -139,21 +172,35 @@ function repriceLeg(leg: ChainLeg, kind: "CE" | "PE", strike: number, spot: numb
   const want = tradeDirection(spot, eodSpot);
   const cheap = isCheapSide(kind, strike, spot);
   const inPlay = isInPlay(kind, strike, spot, eodSpot);
+  const liquid = liquidEnough(leg.oi, leg.volume);
   let mark: AgentMark = leg.mark === "SELL" ? "SELL" : "NO_BUY";
   let why = leg.why;
   if (mark === "SELL") {
     why = "You already hold this. Helper wants it closed.";
   } else if (!cheap) {
     why = kind === "PE" ? "ITM PE sits above spot — premium is too high. Buy a PE below the index." : "ITM CE sits below spot — premium is too high. Buy a CE above the index.";
+    mark = "NO_BUY";
   } else if (want && want !== kind) {
     why = want === "PE" ? "Index looks lower by EOD. Buy PE below spot, not this CE." : "Index looks higher by EOD. Buy CE above spot, not this PE.";
     mark = "NO_BUY";
   } else if (!inPlay) {
     why = "Too far from the EOD close — this strike is likely worthless or already spent.";
     mark = "NO_BUY";
-  } else if (net >= 150) {
+  } else if (!liquid) {
+    why = "No tape / no OI — skip this weekly.";
+    mark = "NO_BUY";
+  } else if (gates.invalidated) {
+    why = "Map invalidated — spot broke the session band against the bias.";
+    mark = "NO_BUY";
+  } else if (gates.cutoff) {
+    why = "Session cutoff — no new buys.";
+    mark = "NO_BUY";
+  } else if (net >= gates.netFloor) {
     mark = "BUY";
     why = kind === "PE" ? `OTM PE below spot. Expected net ₹${pnl.net} if the index closes near ${money(eodSpot)}.` : `OTM CE above spot. Expected net ₹${pnl.net} if the index closes near ${money(eodSpot)}.`;
+  } else {
+    mark = "NO_BUY";
+    why = "Expected EOD move does not cover charges.";
   }
   return {
     ...leg,
@@ -235,16 +282,23 @@ function repriceBoard(board: OptionsBoard): OptionsBoard {
         }),
       }
     : board.ai;
+  const clock = sessionClock(new Date(), board.expiry);
+  const gates = {
+    cutoff: clock.cutoff,
+    netFloor: clock.netFloor,
+    invalidated: mapInvalidated(bias, last, expectedLow, expectedHigh),
+  };
   const rows = board.rows.map((row) => ({
     ...row,
-    ce: row.ce ? repriceLeg(row.ce, "CE", row.strike, last, eodSpot, board.expiry) : null,
-    pe: row.pe ? repriceLeg(row.pe, "PE", row.strike, last, eodSpot, board.expiry) : null,
+    ce: row.ce ? repriceLeg(row.ce, "CE", row.strike, last, eodSpot, board.expiry, gates) : null,
+    pe: row.pe ? repriceLeg(row.pe, "PE", row.strike, last, eodSpot, board.expiry, gates) : null,
   }));
   const next: OptionsBoard = {
     ...board,
     eod: board.eod ? { ...board.eod, ...eod } : eod,
     ai,
     compare: ai ? compareEod(eodSpot, Number(ai.close), bias, asBias(ai.direction)) : board.compare,
+    desk: board.desk ? { ...board.desk, clock: clock.label } : board.desk,
     rows,
   };
   next.buys = rebuildBuys(next, eod.close);
@@ -292,7 +346,7 @@ export function applyLiveQuotes(board: OptionsBoard, quotes: QuoteTick[]): Optio
     if (!leg) return null;
     const q = map.get(fnoKey(leg.exchange, leg.symbol));
     if (!q?.lastPrice) return leg;
-    return { ...leg, lastPrice: q.lastPrice, prevPrice: q.prevPrice, change: q.change };
+    return { ...leg, lastPrice: q.lastPrice, prevPrice: q.prevPrice, change: q.change, oi: q.oi ?? leg.oi, volume: q.volume ?? leg.volume };
   };
   const spot = map.get(`${board.exchange}:${board.symbol}`);
   const futureQ = board.future ? map.get(fnoKey(board.future.exchange, board.future.symbol)) : null;

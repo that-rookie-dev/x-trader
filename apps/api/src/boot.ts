@@ -22,6 +22,8 @@ import { StrategyEngine } from "./modules/strategy/engine.js";
 import { ResearchService } from "./modules/research/service.js";
 import { ForecastEngine } from "./modules/forecast/engine.js";
 import { AgentLoop } from "./modules/agent/loop.js";
+import { SignalStore } from "./modules/forecast/signals.js";
+import { PlayStore } from "./modules/forecast/plays.js";
 import type { AppServices } from "./app/context.js";
 import { appSettings } from "./db/schema.js";
 
@@ -61,7 +63,9 @@ export async function boot(env: Env) {
   const ai = new AiService(db, crypto);
   const research = new ResearchService(db);
   const forecasts = new ForecastEngine(db, market, research, ai, risk);
-  const agent = new AgentLoop(db, gate, market, forecasts, execution, log);
+  const signals = new SignalStore(db, market);
+  const plays = new PlayStore(db, market, journal);
+  const agent = new AgentLoop(db, gate, market, forecasts, execution, journal, signals, plays, log, read);
 
   const services: AppServices = {
     env,
@@ -85,6 +89,8 @@ export async function boot(env: Env) {
     research,
     forecasts,
     agent,
+    signals,
+    plays,
   };
 
   const app = createHttpApp(services);
@@ -101,7 +107,11 @@ export async function boot(env: Env) {
   const studyLoop = setInterval(() => {
     void agent.tick().catch((err) => log.warn({ err }, "agent tick failed"));
   }, 180_000);
+  const playLoop = setInterval(() => {
+    void plays.tick(read).catch((err) => log.warn({ err }, "play reconcile failed"));
+  }, 18_000);
   void agent.tick().catch((err) => log.warn({ err }, "initial agent tick failed"));
+  void plays.tick(read).catch((err) => log.warn({ err }, "initial play reconcile failed"));
 
   const server = app.listen(env.API_PORT, env.API_HOST, () => {
     log.info({ url: `http://${env.API_HOST}:${env.API_PORT}` }, "xTrader API listening");
@@ -113,6 +123,7 @@ export async function boot(env: Env) {
     clearInterval(quoteLoop);
     clearInterval(liveLoop);
     clearInterval(studyLoop);
+    clearInterval(playLoop);
     await market.disconnectStream();
     server.close();
     await client.end({ timeout: 5 });

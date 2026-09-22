@@ -1,6 +1,7 @@
 import {
   AppError,
   type BrokerConnectionStatus,
+  type BrokerOrder,
   type BrokerProfile,
   type BrokerReadClient,
   type Funds,
@@ -8,7 +9,7 @@ import {
   type PositionSnapshot,
 } from "@xtrader/domain";
 import type { ZerodhaAuthService } from "./auth-service.js";
-import { mapFunds, mapHoldings, mapPositions } from "./auth-service.js";
+import { mapFunds, mapHoldings, mapOrders, mapPositions } from "./auth-service.js";
 import type { KiteGateway } from "./kite-gateway.js";
 
 export class ZerodhaReadAdapter implements BrokerReadClient {
@@ -58,5 +59,11 @@ export class ZerodhaReadAdapter implements BrokerReadClient {
     const token = await this.token();
     const positions = await this.kite.getPositions(token);
     return mapPositions(positions);
+  }
+
+  async getOrders(): Promise<BrokerOrder[]> {
+    const token = await this.token();
+    const orders = await this.kite.getOrders(token);
+    return mapOrders(orders);
   }
 }

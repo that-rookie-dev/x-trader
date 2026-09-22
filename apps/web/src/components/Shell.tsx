@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Coach, readSeen, tourForPath } from "@/components/Coach";
 
 const NAV = [
   ["/", "Options", IconOptions],
@@ -45,6 +46,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [clock, setClock] = useState("");
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tour, setTour] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("xtrader-theme");
@@ -84,6 +86,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
     const id = setInterval(refresh, 5000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const onCoach = (ev: Event) => {
+      const detail = (ev as CustomEvent<string>).detail;
+      if (detail) setTour(detail);
+    };
+    window.addEventListener("xtrader-coach", onCoach);
+    return () => window.removeEventListener("xtrader-coach", onCoach);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const name = tourForPath(path);
+    if (!readSeen()[name]) {
+      const id = window.setTimeout(() => setTour(name), 600);
+      return () => window.clearTimeout(id);
+    }
+  }, [path]);
 
   async function connect() {
     try {
@@ -136,6 +156,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {boot?.settings.haltActive ? <span className="badge live">HALT</span> : null}
           <span className="ist">{clock}</span>
           <span className="spacer" />
+          <button
+            type="button"
+            className="btn"
+            title="Replay guide"
+            aria-label="Replay guide"
+            onClick={() => setTour(tourForPath(path))}
+          >
+            ?
+          </button>
           {error ? <span className="down">{error}</span> : null}
           <button className="btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? "Light" : "Dark"}
@@ -154,7 +183,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               Disconnect
             </button>
           ) : (
-            <button className="btn primary" onClick={() => void connect()}>
+            <button className="btn primary" data-coach="connect" onClick={() => void connect()}>
               {boot?.linked ? "Reconnect Zerodha" : "Connect Zerodha"}
             </button>
           )}
@@ -169,7 +198,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   : "Connect your trading account so the helper can read prices and tell you what to do."}
               </p>
               <div className="row" style={{ marginTop: 10 }}>
-                <button className="btn primary" onClick={() => void connect()}>
+                <button className="btn primary" data-coach="connect" onClick={() => void connect()}>
                   {boot.linked ? "Reconnect Zerodha" : "Connect Zerodha"}
                 </button>
               </div>
@@ -178,6 +207,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </div>
+      <Coach tour={tour} onClose={() => setTour(null)} />
     </div>
   );
 }

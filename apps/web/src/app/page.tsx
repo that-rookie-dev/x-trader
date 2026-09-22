@@ -4,7 +4,7 @@ import { CandleChart, type ChartLine } from "@/components/CandleChart";
 import { NamePicker, type DeskName } from "@/components/NamePicker";
 import { api } from "@/lib/api";
 import { clientOptionPnl } from "@/lib/charges";
-import type { AgentMark, ChainLeg, OptionsBoard, QuoteTick } from "@/lib/desk";
+import type { AgentMark, AlgoSignal, ChainLeg, OptionsBoard, Play, QuoteTick } from "@/lib/desk";
 import { applyLiveQuotes, applyTickCandle, mergeCandles, quotesFromBoard } from "@/lib/live";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -27,6 +27,8 @@ export default function OptionsPage() {
   const [lots, setLots] = useState(1);
   const [studying, setStudying] = useState(false);
   const [stage, setStage] = useState<"chain" | "chart">("chain");
+  const [signals, setSignals] = useState<AlgoSignal[]>([]);
+  const [plays, setPlays] = useState<Play[]>([]);
 
   useEffect(() => {
     void api<{ names: Name[]; desk?: { exchange: string; symbol: string; expiry: string | null } | null }>(
@@ -71,6 +73,7 @@ export default function OptionsPage() {
             quotesFromBoard(prev),
           );
         });
+        if (data.plays) setPlays(data.plays);
         setError(null);
         setSelected((cur) => cur ?? pickDefault(data));
       } catch (e) {
@@ -133,6 +136,26 @@ export default function OptionsPage() {
   liveKeys.current = new Set(board ? quoteKeys(board).split(",") : []);
 
   useEffect(() => {
+    if (!symbol || !expiry) return;
+    let cancelled = false;
+    void api<{ signals: AlgoSignal[]; plays?: Play[] }>(
+      `/api/options/signals?symbol=${encodeURIComponent(symbol)}&expiry=${encodeURIComponent(expiry)}`,
+    )
+      .then((data) => {
+        if (!cancelled) {
+          setSignals(data.signals ?? []);
+          setPlays(data.plays ?? []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSignals([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, expiry]);
+
+  useEffect(() => {
     if (!symbol) return;
     const source = new EventSource("/api/market/stream");
     const onTick = (ev: MessageEvent) => {
@@ -152,12 +175,37 @@ export default function OptionsPage() {
         setCandles((prev) => applyTickCandle(prev, Number(tick.lastPrice), at));
       }
     };
+    const onSignal = (ev: MessageEvent) => {
+      let row: AlgoSignal;
+      try {
+        row = JSON.parse(String(ev.data)) as AlgoSignal;
+      } catch {
+        return;
+      }
+      if (!row?.contract || row.underlying !== symbol) return;
+      if (expiry && row.expiry && row.expiry !== expiry) return;
+      setSignals((prev) => [row, ...prev.filter((item) => item.id !== row.id)].slice(0, 30));
+    };
+    const onPlay = (ev: MessageEvent) => {
+      let row: Play;
+      try {
+        row = JSON.parse(String(ev.data)) as Play;
+      } catch {
+        return;
+      }
+      if (!row?.id || row.underlying !== symbol) return;
+      setPlays((prev) => [row, ...prev.filter((item) => item.id !== row.id)].slice(0, 20));
+    };
     source.addEventListener("tick", onTick);
+    source.addEventListener("signal", onSignal);
+    source.addEventListener("play", onPlay);
     return () => {
       source.removeEventListener("tick", onTick);
+      source.removeEventListener("signal", onSignal);
+      source.removeEventListener("play", onPlay);
       source.close();
     };
-  }, [symbol, exchange]);
+  }, [symbol, exchange, expiry]);
 
   async function tryPaper(idea: { symbol: string; exchange?: string; mark: AgentMark; canPaper: boolean }) {
     if (!board?.paperMode || !idea.canPaper) return;
@@ -178,6 +226,15 @@ export default function OptionsPage() {
       setNote(e instanceof Error ? e.message : "Paper order failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function dismissPlay(id: string) {
+    try {
+      const data = await api<{ play: Play }>(`/api/plays/${id}/dismiss`, { method: "POST", body: "{}" });
+      setPlays((prev) => prev.map((row) => (row.id === id ? data.play : row)));
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "Could not dismiss");
     }
   }
 
@@ -229,13 +286,17 @@ export default function OptionsPage() {
     board?.ai?.close,
     board?.ai?.low,
     board?.ai?.high,
+    board?.desk?.vwap,
+    board?.desk?.orbHigh,
+    board?.desk?.orbLow,
+    board?.session?.invalidation,
   ].join("|");
   const marks = useMemo(() => chartLines(board), [markKey]);
 
   return (
     <div className="desk-fit">
       <div className="hud card">
-        <label>
+        <label data-coach="und">
           <span>UND</span>
           <NamePicker
             names={names}
@@ -250,7 +311,7 @@ export default function OptionsPage() {
             }}
           />
         </label>
-        <label>
+        <label data-coach="exp">
           <span>EXP</span>
           <select className="input" value={expiry} onChange={(e) => setExpiry(e.target.value)}>
             {expiries.map((item) => (
@@ -260,14 +321,20 @@ export default function OptionsPage() {
             ))}
           </select>
         </label>
-        <div className="hud-metric">
+        <div className="hud-metric" data-coach="spot">
           <span>SPOT</span>
           <strong className={`mono ${flashClass(board?.change)}`}>{board?.lastPrice ?? "—"}</strong>
           <em>
             {board
-              ? board.levels?.supports?.[0] || board.levels?.resistances?.[0]
-                ? `S ${board.levels.supports[0] ?? "—"} · R ${board.levels.resistances[0] ?? "—"}`
-                : `${board.trust}% ${board.bias}`
+              ? [
+                  board.desk?.clock ?? null,
+                  board.desk?.pcr != null ? `PCR ${board.desk.pcr}` : null,
+                  board.desk?.maxPain != null ? `PAIN ${board.desk.maxPain}` : null,
+                  board.desk?.ivRank != null ? `IVR ${(board.desk.ivRank * 100).toFixed(0)}` : null,
+                  board.desk?.adx != null ? `ADX ${board.desk.adx.toFixed(0)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || `${board.trust}% ${board.bias}`
               : "…"}
           </em>
         </div>
@@ -286,13 +353,26 @@ export default function OptionsPage() {
           <strong className="mono">{board?.ai?.close ?? (studying ? "…" : "—")}</strong>
           <em>{board?.ai ? `${board.ai.confidence}% ${board.ai.direction}` : studying ? "STUDY" : "IDLE"}</em>
         </div>
-        <button type="button" className="btn primary hud-study" disabled={studying} onClick={() => void runStudy()}>
+        <button type="button" className="btn primary hud-study" data-coach="study" disabled={studying} onClick={() => void runStudy()}>
           {studying ? "SCAN…" : "STUDY"}
         </button>
       </div>
 
       <div className="hud-sub card">
-        <div className="chip-row">
+        {board?.desk?.votes?.length ? (
+          <div className="vote-strip" data-coach="votes">
+            {board.desk.votes.map((vote) => (
+              <span key={vote.name} className={vote.vote > 0 ? "up" : vote.vote < 0 ? "down" : ""} title={vote.detail}>
+                {vote.name.replace("DAILY ", "D ").replace("INTRADAY ", "I ")}
+                {vote.vote > 0 ? "+" : vote.vote < 0 ? "−" : "·"}
+              </span>
+            ))}
+            {board.desk.vwap ? <span>VWAP {board.desk.vwap}</span> : null}
+            {board.desk.orbHigh ? <span>ORB {board.desk.orbLow}–{board.desk.orbHigh}</span> : null}
+          </div>
+        ) : null}
+        <div className="hud-main">
+        <div className="chip-row" data-coach="buy-meaning">
           {(board?.buys ?? []).map((idea) => (
             <button
               key={idea.contract}
@@ -313,6 +393,44 @@ export default function OptionsPage() {
           {board && board.buys.length === 0 ? <span className="muted">No cheap-side buy</span> : null}
         </div>
         {studyNote ? <p className={`hud-note ${error || board?.aiError ? "down" : ""}`}>{studyNote}</p> : null}
+        </div>
+        {plays.length || signals.length ? (
+          <ul className="signal-tape" data-coach="tape">
+            {plays.slice(0, 4).map((row, i) => (
+              <li key={row.id} className={row.status === "FILLED" ? "up" : row.status === "MISSED" || row.status === "EXPIRED" ? "down" : ""}>
+                <time>{tapeTime(row.at)}</time>
+                <b>{row.status}</b>
+                <span>
+                  {row.side} {row.contract.replace(row.underlying, "").slice(-8)}
+                </span>
+                {row.edgeAfterCost ? <em className="mono">net ₹{Number(row.edgeAfterCost).toFixed(0)}</em> : null}
+                {row.expectancyNote ? <em>{row.expectancyNote}</em> : null}
+                {row.status === "OPEN" ? (
+                  <button
+                    type="button"
+                    className="tape-dismiss"
+                    data-coach={i === 0 ? "dismiss" : undefined}
+                    onClick={() => void dismissPlay(row.id)}
+                  >
+                    Dismiss
+                  </button>
+                ) : null}
+              </li>
+            ))}
+            {plays.length === 0
+              ? signals.slice(0, 4).map((row) => (
+                  <li key={row.id} className={row.toMark === "BUY" ? "up" : row.toMark === "SELL" ? "down" : ""}>
+                    <time>{tapeTime(row.at)}</time>
+                    <b>{row.toMark}</b>
+                    <span>
+                      {row.strike} {row.kind}
+                    </span>
+                    {row.net != null ? <em className="mono">net ₹{Number(row.net).toFixed(0)}</em> : null}
+                  </li>
+                ))
+              : null}
+          </ul>
+        ) : null}
       </div>
 
       <div className="desk-body">
@@ -321,7 +439,7 @@ export default function OptionsPage() {
             <button type="button" className={`pill ${stage === "chain" ? "on" : ""}`} onClick={() => setStage("chain")}>
               CHAIN
             </button>
-            <button type="button" className={`pill ${stage === "chart" ? "on" : ""}`} onClick={() => setStage("chart")}>
+            <button type="button" className={`pill ${stage === "chart" ? "on" : ""}`} data-coach="chart" onClick={() => setStage("chart")}>
               CHART
             </button>
             {stage === "chart" ? (
@@ -330,6 +448,7 @@ export default function OptionsPage() {
                 <i className="lg-r" /> R
                 <i className="lg-algo" /> ALGO
                 <i className="lg-ai" /> AI
+                <i className="lg-vwap" /> VWAP
               </span>
             ) : null}
           </div>
@@ -339,7 +458,7 @@ export default function OptionsPage() {
             </div>
           ) : (
           <div className="chain-scroll">
-          <table className="chain">
+          <table className="chain" data-coach="chain">
             <colgroup>
               <col className="c-ltp" />
               <col className="c-eod" />
@@ -514,7 +633,7 @@ function PnlBox({
   const brokerage = Number(pnl.charges.buy.brokerage) + Number(pnl.charges.sell.brokerage);
   const gst = Number(pnl.charges.buy.gst) + Number(pnl.charges.sell.gst);
   return (
-    <aside className={`card pnl-card ${kind.toLowerCase()}`}>
+    <aside className={`card pnl-card ${kind.toLowerCase()}`} data-coach="pnl">
       <div className="pnl-top">
         <div>
           <p className="eyebrow">MONEY FLOW</p>
@@ -524,6 +643,7 @@ function PnlBox({
             <span className={`mny ${ (leg.moneyness ?? "").toLowerCase()}`}>{leg.moneyness ?? ""}</span>
           </div>
           <p className="pnl-sym mono">{leg.symbol}</p>
+          {leg.why ? <p className="pnl-why">{leg.why}</p> : null}
         </div>
         <div className="lot-step">
           <span className="muted">Lots</span>
@@ -617,6 +737,11 @@ function chartLines(board: OptionsBoard | null): ChartLine[] {
   board.levels?.supports.forEach((value, i) => add(value, `S${i + 1}`, "#3dd68c"));
   board.levels?.resistances.forEach((value, i) => add(value, `R${i + 1}`, "#ff5c7a"));
   add(board.levels?.magnet, "MAG", "#8b96a8");
+  add(board.desk?.vwap, "VWAP", "#f0b429");
+  add(board.desk?.orbHigh, "ORB H", "#8b7cff", true);
+  add(board.desk?.orbLow, "ORB L", "#8b7cff", true);
+  const inv = board.session?.invalidation?.match(/[\d.]+/)?.[0];
+  add(inv, "INV", "#f07178", true);
   add(board.eod?.low, "ALGO L", "#4c8dff", true);
   add(board.eod?.high, "ALGO H", "#4c8dff", true);
   add(board.eod?.close, "ALGO", "#4c8dff");
@@ -651,6 +776,12 @@ function signedPct(value: number) {
   if (!Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : value < 0 ? "−" : "";
   return `${sign}${Math.abs(value).toFixed(1)}%`;
+}
+
+function tapeTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 
 function compactRupee(value: string) {

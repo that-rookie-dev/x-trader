@@ -1,6 +1,15 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ilike } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { dailyPerformance, positions, setupMemory, tradeJournal } from "../../db/schema.js";
+
+export type ExpectancySnap = {
+  key: string;
+  samples: number;
+  wins: number;
+  losses: number;
+  value: number;
+  note: string;
+};
 
 export class JournalService {
   constructor(private readonly db: Database) {}
@@ -35,6 +44,18 @@ export class JournalService {
     return this.db.select().from(setupMemory);
   }
 
+  async paperLossStreak(symbol: string): Promise<boolean> {
+    const needle = symbol.trim();
+    if (!needle) return false;
+    const rows = await this.db
+      .select()
+      .from(tradeJournal)
+      .where(and(eq(tradeJournal.source, "copilot-paper"), ilike(tradeJournal.instrument, `%${needle}%`)))
+      .orderBy(desc(tradeJournal.createdAt))
+      .limit(5);
+    return rows.length >= 5 && rows.every((row) => row.decision === "LOSS");
+  }
+
   async remember(input: {
     strategy: string;
     regime: string;
@@ -54,6 +75,7 @@ export class JournalService {
         ),
       )
       .limit(1);
+    const pnl = Number(input.pnl ?? 0);
     if (!row) {
       await this.db.insert(setupMemory).values({
         strategy: input.strategy,
@@ -63,11 +85,13 @@ export class JournalService {
         wins: input.win ? 1 : 0,
         losses: input.win ? 0 : 1,
         avgRewardRisk: input.rewardRisk ?? null,
-        expectancy: input.pnl ?? "0",
+        expectancy: Number.isFinite(pnl) ? String(pnl) : "0",
       });
       return;
     }
     const samples = row.sampleCount + 1;
+    const prevExp = Number(row.expectancy ?? 0);
+    const expectancy = Number.isFinite(pnl) ? ((prevExp * row.sampleCount + pnl) / samples).toFixed(4) : row.expectancy;
     await this.db
       .update(setupMemory)
       .set({
@@ -75,9 +99,78 @@ export class JournalService {
         wins: row.wins + (input.win ? 1 : 0),
         losses: row.losses + (input.win ? 0 : 1),
         avgRewardRisk: input.rewardRisk ?? row.avgRewardRisk,
+        expectancy,
         updatedAt: new Date(),
       })
       .where(eq(setupMemory.id, row.id));
+  }
+
+  async expectancy(lane: string, regime: string, kind: string): Promise<ExpectancySnap | null> {
+    const strategy = `${lane}:${kind}`;
+    const rows = await this.db
+      .select()
+      .from(setupMemory)
+      .where(and(eq(setupMemory.strategy, strategy), eq(setupMemory.regime, regime)));
+    if (rows.length === 0) return null;
+    const samples = rows.reduce((sum, row) => sum + row.sampleCount, 0);
+    const wins = rows.reduce((sum, row) => sum + row.wins, 0);
+    const losses = rows.reduce((sum, row) => sum + row.losses, 0);
+    const value = samples > 0 ? rows.reduce((sum, row) => sum + Number(row.expectancy ?? 0) * row.sampleCount, 0) / samples : 0;
+    return {
+      key: `${strategy}:${regime}`,
+      samples,
+      wins,
+      losses,
+      value,
+      note: samples >= 5 ? `this setup ${wins}/${samples} after costs` : "",
+    };
+  }
+
+  async expectancyMap(): Promise<Map<string, ExpectancySnap>> {
+    const rows = await this.db.select().from(setupMemory);
+    const map = new Map<string, ExpectancySnap>();
+    for (const row of rows) {
+      const key = `${row.strategy}:${row.regime}`;
+      const alt = row.strategy;
+      const snap: ExpectancySnap = {
+        key,
+        samples: row.sampleCount,
+        wins: row.wins,
+        losses: row.losses,
+        value: Number(row.expectancy ?? 0),
+        note: row.sampleCount >= 5 ? `this setup ${row.wins}/${row.sampleCount} after costs` : "",
+      };
+      map.set(key, snap);
+      const prev = map.get(alt);
+      if (!prev) map.set(alt, snap);
+    }
+    return map;
+  }
+
+  async recordFilledClose(input: {
+    lane: string;
+    kind: string;
+    regime: string;
+    instrument: string;
+    pnl: string;
+    playId: string;
+  }) {
+    const win = Number(input.pnl) > 0;
+    await this.record({
+      executionMode: "LIVE",
+      instrument: input.instrument,
+      source: "play-close",
+      decision: win ? "WIN" : "LOSS",
+      snapshot: { playId: input.playId, lane: input.lane, kind: input.kind, regime: input.regime },
+      outcome: { pnl: input.pnl },
+    });
+    await this.remember({
+      strategy: `${input.lane}:${input.kind}`,
+      regime: input.regime,
+      executionMode: "LIVE",
+      win,
+      pnl: input.pnl,
+    });
   }
 
   async brief() {

@@ -14,6 +14,10 @@ export type PlainIdea = {
   instrumentType: "EQUITY" | "OPTION" | "FUTURE";
   canPaper: boolean;
   lastPrice?: string;
+  horizon?: "SWING" | "POSITION" | "INTRADAY";
+  rsVsNifty?: number | null;
+  atrStop?: string | null;
+  rank?: number | null;
 };
 
 export type AgentMark = "BUY" | "SELL" | "NO_BUY" | "WAIT";
@@ -53,6 +57,8 @@ export type ChainLeg = {
   moneyness?: "ITM" | "ATM" | "OTM";
   eodMoneyness?: "ITM" | "ATM" | "OTM";
   pnl?: OptionPnl;
+  oi?: number | null;
+  volume?: number | null;
 };
 
 export type ChainRow = {
@@ -75,7 +81,20 @@ export type OptionsBoard = {
   bias: string;
   eod?: { close: string; low: string; high: string; note: string };
   levels?: { supports: string[]; resistances: string[]; magnet: string };
-  session?: { expectedLow: string; expectedHigh: string; magnet: string; pull?: number };
+  session?: { expectedLow: string; expectedHigh: string; magnet: string; pull?: number; invalidation?: string };
+  desk?: {
+    votes: Array<{ name: string; vote: number; detail: string }>;
+    vwap: string | null;
+    orbHigh: string | null;
+    orbLow: string | null;
+    pcr: number | null;
+    maxPain: number | null;
+    clock: string;
+    ivRank?: number | null;
+    ivAtm?: number | null;
+    hv20?: number | null;
+    adx?: number | null;
+  };
   ai?: {
     close: string;
     low: string;
@@ -97,6 +116,7 @@ export type OptionsBoard = {
   rows: ChainRow[];
   buys: PlainIdea[];
   sells: PlainIdea[];
+  plays?: Play[];
   paperMode: boolean;
 };
 
@@ -116,7 +136,46 @@ export type OptionsAdvice = {
 export type StocksDesk = {
   buys: PlainIdea[];
   sells: PlainIdea[];
+  today?: PlainIdea[];
+  plays?: Play[];
   paperMode: boolean;
+};
+
+export type PlayStatus = "OPEN" | "DISMISSED" | "FILLED" | "PARTIAL" | "MISSED" | "EXPIRED";
+
+export type Play = {
+  id: string;
+  at: string;
+  lane: "FNO" | "CASH";
+  side: "CE" | "PE" | "EQ" | "FUT";
+  contract: string;
+  exchange: string;
+  underlying: string;
+  expiry: string | null;
+  status: PlayStatus;
+  entryZone: string;
+  stop: string;
+  targets: string[];
+  holdUntil: string;
+  invalidation: string;
+  edgeAfterCost: string | null;
+  confidence: number;
+  regime: string;
+  why: string[];
+  eodSpot?: string | null;
+  eodPremium?: string | null;
+  pcr?: number | null;
+  ivRank?: number | null;
+  thetaNote?: string | null;
+  horizon?: string;
+  rsVsNifty?: number | null;
+  atrStop?: string | null;
+  rank?: number | null;
+  dismissedAt?: string | null;
+  brokerOrderId?: string | null;
+  fillQty?: number | null;
+  fillPx?: string | null;
+  expectancyNote?: string | null;
 };
 
 export type QuoteTick = {
@@ -125,4 +184,22 @@ export type QuoteTick = {
   lastPrice: string | null;
   prevPrice: string | null;
   change: number | null;
+  oi?: number | null;
+  volume?: number | null;
+};
+
+export type AlgoSignal = {
+  id: string;
+  at: string;
+  underlying: string;
+  expiry: string;
+  contract: string;
+  kind: string;
+  strike: string;
+  fromMark: string;
+  toMark: string;
+  why: string;
+  spot: string | null;
+  premium: string | null;
+  net: string | null;
 };

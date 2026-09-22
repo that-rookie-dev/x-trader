@@ -413,3 +413,76 @@ export const forecasts = pgTable(
   },
   (t) => [uniqueIndex("forecast_key").on(t.exchange, t.symbol, t.horizon)],
 );
+
+export const algoMarks = pgTable(
+  "algo_marks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    underlying: text("underlying").notNull(),
+    expiry: text("expiry").notNull(),
+    contract: text("contract").notNull(),
+    kind: text("kind").notNull(),
+    strike: numeric("strike", { precision: 18, scale: 4 }).notNull(),
+    mark: text("mark").notNull(),
+    why: text("why").notNull().default(""),
+    spot: numeric("spot", { precision: 18, scale: 4 }),
+    premium: numeric("premium", { precision: 18, scale: 4 }),
+    net: numeric("net", { precision: 18, scale: 4 }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("algo_mark_key").on(t.expiry, t.contract)],
+);
+
+export const algoSignals = pgTable("algo_signals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  underlying: text("underlying").notNull(),
+  expiry: text("expiry").notNull(),
+  contract: text("contract").notNull(),
+  kind: text("kind").notNull(),
+  strike: numeric("strike", { precision: 18, scale: 4 }).notNull(),
+  fromMark: text("from_mark").notNull(),
+  toMark: text("to_mark").notNull(),
+  why: text("why").notNull().default(""),
+  spot: numeric("spot", { precision: 18, scale: 4 }),
+  premium: numeric("premium", { precision: 18, scale: 4 }),
+  net: numeric("net", { precision: 18, scale: 4 }),
+});
+
+export const plays = pgTable("plays", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  lane: text("lane").notNull(),
+  underlying: text("underlying").notNull(),
+  expiry: text("expiry").notNull().default(""),
+  contract: text("contract").notNull(),
+  exchange: text("exchange").notNull().default("NFO"),
+  kind: text("kind").notNull(),
+  status: text("status").notNull().default("OPEN"),
+  holdUntil: timestamp("hold_until", { withTimezone: true }).notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+  brokerOrderId: text("broker_order_id"),
+  fillQty: integer("fill_qty"),
+  fillPx: numeric("fill_px", { precision: 18, scale: 4 }),
+  closedPnl: numeric("closed_pnl", { precision: 18, scale: 4 }),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  regime: text("regime").notNull().default("UNKNOWN"),
+  horizon: text("horizon").notNull().default("SESSION"),
+  setupKey: text("setup_key").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const volHistory = pgTable(
+  "vol_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    symbol: text("symbol").notNull(),
+    sessionDate: text("session_date").notNull(),
+    ivAtm: numeric("iv_atm", { precision: 10, scale: 6 }),
+    hv20: numeric("hv20", { precision: 10, scale: 6 }),
+    hv60: numeric("hv60", { precision: 10, scale: 6 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("vol_history_day").on(t.symbol, t.sessionDate)],
+);

@@ -3,9 +3,22 @@
 import { AdviceCard } from "@/components/AdviceCard";
 import { CandleChart } from "@/components/CandleChart";
 import { api } from "@/lib/api";
-import type { PlainIdea, QuoteTick, StocksDesk } from "@/lib/desk";
+import type { PlainIdea, Play, QuoteTick, StocksDesk } from "@/lib/desk";
 import { applyTickCandle, mergeCandles } from "@/lib/live";
 import { useEffect, useState } from "react";
+
+function tapeTime(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(iso));
+  } catch {
+    return "";
+  }
+}
 
 type Candle = { time: number; open: number; high: number; low: number; close: number };
 
@@ -146,16 +159,46 @@ export default function StocksPage() {
     }
   }
 
+  async function dismissPlay(id: string) {
+    try {
+      const data = await api<{ play: Play }>(`/api/plays/${id}/dismiss`, { method: "POST", body: "{}" });
+      setDesk((prev) =>
+        prev
+          ? { ...prev, plays: (prev.plays ?? []).map((p) => (p.id === data.play.id ? data.play : p)) }
+          : prev,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not dismiss");
+    }
+  }
+
   return (
     <div className="guide">
       <div className="page-hero">
         <div>
           <p className="eyebrow">Stocks</p>
-          <h1>Today’s stock list</h1>
-          <p className="lede">No need to pick anything. The helper says what looks good to buy today, and what you already own that should be sold.</p>
+          <h1>Swing book, same-day overlay</h1>
+          <p className="lede">Swing and positional ranks are the main list. TODAY is only a same-session breakout. You still place the order on Zerodha.</p>
         </div>
       </div>
       {error ? <p className="down">{error}</p> : null}
+      {(desk?.plays ?? []).length ? (
+        <ul className="signal-tape" data-coach="tape">
+          {(desk?.plays ?? []).slice(0, 4).map((row) => (
+            <li key={row.id} className={row.status === "FILLED" ? "up" : row.status === "MISSED" || row.status === "EXPIRED" ? "down" : ""}>
+              <time>{tapeTime(row.at)}</time>
+              <b>{row.status}</b>
+              <span>{row.contract}</span>
+              {row.expectancyNote ? <em>{row.expectancyNote}</em> : null}
+              {row.status === "OPEN" ? (
+                <button type="button" className="tape-dismiss" onClick={() => void dismissPlay(row.id)}>
+                  Dismiss
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {chartSymbol ? (
         <div className="card">
           <p className="eyebrow">{chartSymbol}</p>
@@ -163,8 +206,22 @@ export default function StocksPage() {
         </div>
       ) : null}
       <div className="lane-col">
-        <section>
-          <h2>Buy today</h2>
+        <section data-coach="today">
+          <h2>TODAY</h2>
+          {(desk?.today ?? []).map((idea) => (
+            <AdviceCard
+              key={`today:${idea.contract}`}
+              idea={idea}
+              paperMode={Boolean(desk?.paperMode)}
+              busy={busy}
+              note={notes[idea.contract]}
+              onPaper={(row) => void tryPaper(row)}
+            />
+          ))}
+          {desk && (desk.today ?? []).length === 0 ? <div className="empty">No same-day volume breakout right now.</div> : null}
+        </section>
+        <section data-coach="swing">
+          <h2>Swing / positional</h2>
           {(desk?.buys ?? []).map((idea) => (
             <AdviceCard
               key={`buy:${idea.contract}`}

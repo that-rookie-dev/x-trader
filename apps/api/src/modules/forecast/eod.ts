@@ -1,5 +1,6 @@
 import { money, type AiStudy, type ForecastBias } from "@xtrader/domain";
 import { optionPnl } from "./charges.js";
+import { liquidEnough, mapInvalidated, sessionClock } from "./chain-tape.js";
 import type { AgentMark } from "./desk.js";
 
 export function pickStructureMagnet(input: {
@@ -214,6 +215,20 @@ export function eodTradeView(input: {
   lotSize: number;
   held: boolean;
   existing: AgentMark;
+  now?: Date;
+  bias?: ForecastBias;
+  expectedLow?: number;
+  expectedHigh?: number;
+  oi?: number | null;
+  volume?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  netFloor?: number;
+  cutoff?: boolean;
+  invalidated?: boolean;
+  liquid?: boolean;
+  richIv?: boolean;
+  adxAgainst?: boolean;
 }): {
   eodPremium: string;
   moneyness: "ITM" | "ATM" | "OTM";
@@ -232,6 +247,15 @@ export function eodTradeView(input: {
   const want = tradeDirection(input.spot, input.eodSpot);
   const cheap = isCheapSide(input.kind, input.strike, input.spot);
   const inPlay = isInPlayStrike(input.kind, input.strike, input.spot, input.eodSpot);
+  const clock = sessionClock(input.now ?? new Date(), input.expiry);
+  const cutoff = input.cutoff ?? clock.cutoff;
+  const floor = input.netFloor ?? clock.netFloor;
+  const invalidated =
+    input.invalidated ??
+    (input.bias != null && input.expectedLow != null && input.expectedHigh != null
+      ? mapInvalidated(input.bias, input.spot, input.expectedLow, input.expectedHigh)
+      : false);
+  const liquid = input.liquid ?? liquidEnough(input.oi, input.volume, input.bid, input.ask);
   let mark: AgentMark = "NO_BUY";
   let why = "Expected EOD move does not cover charges.";
   if (input.existing === "SELL" && input.held) {
@@ -249,7 +273,18 @@ export function eodTradeView(input: {
         : "Index looks higher by EOD. Buy CE above spot, not this PE.";
   } else if (!inPlay) {
     why = "Too far from the EOD close — this strike is likely worthless or already spent.";
-  } else if (net >= 150) {
+  } else if (!liquid) {
+    why = "No tape / no OI — skip this weekly.";
+  } else if (input.richIv) {
+    why = "IV is rich vs realized vol — do not buy this weekly premium.";
+  } else if (input.adxAgainst) {
+    why = "ADX is trending against this side — do not fade a strong move.";
+  } else if (invalidated) {
+    why = "Map invalidated — spot broke the session band against the bias.";
+    mark = input.existing === "WAIT" ? "WAIT" : "NO_BUY";
+  } else if (cutoff) {
+    why = "Session cutoff — no new buys.";
+  } else if (net >= floor) {
     mark = "BUY";
     why =
       input.kind === "PE"

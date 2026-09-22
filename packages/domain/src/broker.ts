@@ -128,6 +128,8 @@ export interface BrokerOrder {
   price?: DecimalString;
   averagePrice?: DecimalString;
   rawStatus?: string;
+  transactionType?: "BUY" | "SELL";
+  orderTimestamp?: string;
 }
 
 export interface OrderAcknowledgement {
@@ -175,6 +177,7 @@ export interface BrokerReadClient {
   getFunds(): Promise<Funds>;
   getPositions(): Promise<PositionSnapshot[]>;
   getHoldings(): Promise<Holding[]>;
+  getOrders?(): Promise<BrokerOrder[]>;
 }
 
 export interface BrokerMarketDataClient {

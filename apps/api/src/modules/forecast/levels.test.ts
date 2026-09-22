@@ -98,7 +98,7 @@ describe("forecast levels", () => {
     expect(bull.find((i) => i.kind === "CE")?.action).toBe("BUY");
     expect(bull.find((i) => i.kind === "CE")?.exit).toMatch(/Sell the CE/);
     expect(bull.find((i) => i.kind === "PE")?.action).toBe("SKIP");
-    expect(bull.find((i) => i.lane === "CASH")?.action).toBe("BUY");
+    expect(bull.find((i) => i.lane === "CASH")?.action).toBe("WAIT");
 
     const bear = buildSuggestions({
       symbol: "RELIANCE",
@@ -108,6 +108,7 @@ describe("forecast levels", () => {
       last: 1246,
       sma20: 1281,
       sma50: 1300,
+      sma200: 1400,
       future: "RELIANCE26SEPFUT",
       call: "RELIANCE26SEP1250CE",
       put: "RELIANCE26SEP1250PE",
@@ -115,10 +116,10 @@ describe("forecast levels", () => {
     });
     expect(bear.find((i) => i.kind === "PE")?.action).toBe("BUY");
     expect(bear.find((i) => i.kind === "CE")?.action).toBe("SKIP");
-    expect(bear.find((i) => i.lane === "CASH")?.action).toBe("AVOID");
+    expect(bear.find((i) => i.lane === "CASH")?.action).toBe("SELL");
   });
 
-  it("sells an extended call and picks long-term cash when SMA200 is stacked", () => {
+  it("sells an extended call and picks swing cash when SMA200 holds", () => {
     const sell = buildSuggestions({
       symbol: "NIFTY 50",
       instrumentType: "INDEX",
@@ -155,6 +156,7 @@ describe("forecast levels", () => {
       expiry: null,
     });
     expect(growth.find((i) => i.lane === "CASH")?.action).toBe("BUY");
-    expect(growth.find((i) => i.lane === "CASH")?.why).toMatch(/Long-term growth/);
+    expect(growth.find((i) => i.lane === "CASH")?.why).toMatch(/Swing candidate|Stocks/);
+    expect(growth.find((i) => i.lane === "CASH")?.stop).toBeTruthy();
   });
 });

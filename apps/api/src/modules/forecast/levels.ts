@@ -246,16 +246,16 @@ export type Idea = {
   exit?: string | null;
   stop?: string | null;
   target?: string | null;
+  horizon?: "SWING" | "POSITION" | "INTRADAY";
+  rsVsNifty?: number | null;
+  atrStop?: string | null;
+  rank?: number | null;
 };
 
 function isoDays(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
-}
-
-function pct(n: number): string {
-  return `${(n * 100).toFixed(1)}%`;
 }
 
 function optionExits(premium: string | null | undefined, kind: "CE" | "PE", symbol: string, stopUnder: string) {
@@ -402,17 +402,10 @@ export function buildSuggestions(input: {
   }
 
   const news = input.newsScore ?? 0;
-  const above50 = input.sma50 != null && input.last > input.sma50;
   const above200 = input.sma200 != null && input.last > input.sma200;
-  const stacked =
-    input.sma50 != null && input.sma200 != null && input.sma50 >= input.sma200 * 0.98 && above50 && above200;
-  const growth = (input.ret6m != null && input.ret6m > 0.04) || (input.ret12m != null && input.ret12m > 0.08);
-  const retNote = [
-    input.ret6m != null ? `6m ${pct(input.ret6m)}` : null,
-    input.ret12m != null ? `1y ${pct(input.ret12m)}` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const atrStop = input.stopUnder ?? money(input.last * 0.975, 2);
+  const atrTarget = money(input.last + (input.last - Number(atrStop)) * 1.2, 2);
+  const blocked = (input.bias === "BEARISH" || news < -0.4) && input.sma200 != null && input.last < input.sma200;
 
   if (input.instrumentType === "INDEX") {
     ideas.push({
@@ -424,31 +417,34 @@ export function buildSuggestions(input: {
       why: "Index is context. Trade the future/options above, not the cash index.",
       until: null,
     });
-  } else if (stacked && news > -0.25 && (growth || input.ret6m == null)) {
+  } else if (blocked) {
     ideas.push({
       lane: "CASH",
       kind: "EQ",
-      action: "BUY",
+      action: input.last < (input.sma200 ?? input.last) ? "SELL" : "AVOID",
       contract: input.symbol,
       exchange: "NSE",
-      why: `Long-term growth: price holds SMA50/200${retNote ? ` (${retNote})` : ""}. Add as a core holding, not a day trade.`,
-      until: isoDays(365),
-      primary: !ideas.some((i) => i.primary),
-      exit: `Trim if weekly close loses SMA200. Re-check on the next study.`,
+      why: "Strong downtrend / below SMA200. No new cash BUY — see Stocks desk for ranked sells.",
+      until: null,
+      stop: atrStop,
+      atrStop,
+      horizon: "SWING",
     });
-  } else if (input.bias === "BULLISH" && input.sma20 != null && input.last > input.sma20 && input.confidence >= 0.58) {
+  } else if (above200 && input.bias === "BULLISH" && input.confidence >= 0.55 && news >= -0.4) {
     ideas.push({
       lane: "CASH",
       kind: "EQ",
       action: "BUY",
       contract: input.symbol,
       exchange: "NSE",
-      why: above200
-        ? `Daily trend is up and price is above SMA200${retNote ? ` (${retNote})` : ""}. Candidate for a long-term add.`
-        : "History is still building a 200-day base. Treat as a long-term watch that is working, not a positional core yet.",
-      until: isoDays(above200 ? 280 : 120),
+      why: `Swing candidate above SMA200. Ranked list with 12-1 / RS vs Nifty lives on Stocks. Stop ${atrStop}, first target ${atrTarget}.`,
+      until: isoDays(21),
       primary: !ideas.some((i) => i.primary),
-      exit: "Sell only if the daily map flips bearish and price loses SMA50.",
+      stop: atrStop,
+      target: atrTarget,
+      atrStop,
+      horizon: "SWING",
+      exit: `Invalidation: close through ${atrStop}.`,
     });
   } else if (above200 && input.bias !== "BEARISH") {
     ideas.push({
@@ -457,22 +453,12 @@ export function buildSuggestions(input: {
       action: "HOLD",
       contract: input.symbol,
       exchange: "NSE",
-      why: `Above SMA200. Keep an existing long-term holding; do not chase a fresh add this cycle.`,
-      until: isoDays(180),
-      exit: "Sell if price closes below SMA200 on a weekly bar.",
-    });
-  } else if (input.bias === "BEARISH") {
-    ideas.push({
-      lane: "CASH",
-      kind: "EQ",
-      action: input.sma200 != null && input.last < input.sma200 ? "SELL" : "AVOID",
-      contract: input.symbol,
-      exchange: "NSE",
-      why:
-        input.sma200 != null && input.last < input.sma200
-          ? "Below SMA200 on a weak daily map. Do not hold a long-term cash position here."
-          : "Weak daily map. Do not add a long-term cash holding here.",
-      until: null,
+      why: "Above SMA200. Keep an existing holding; fresh adds go through the Stocks swing ranker.",
+      until: isoDays(60),
+      stop: atrStop,
+      atrStop,
+      horizon: "POSITION",
+      exit: `Sell if weekly close loses SMA200 or ${atrStop}.`,
     });
   } else {
     ideas.push({
@@ -481,8 +467,9 @@ export function buildSuggestions(input: {
       action: "WAIT",
       contract: input.symbol,
       exchange: "NSE",
-      why: "No long-term growth edge yet. Wait for price to reclaim SMA50 with history confirmation.",
+      why: "No swing edge here yet. Open Stocks for the 12-1 / RS / ATR ranked book.",
       until: null,
+      horizon: "SWING",
     });
   }
   return ideas;

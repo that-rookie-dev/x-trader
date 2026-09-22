@@ -27,6 +27,8 @@ export interface KiteQuote {
   instrument_token?: number;
   last_price?: number;
   volume?: number;
+  oi?: number;
+  average_price?: number;
   ohlc?: { open?: number; high?: number; low?: number; close?: number };
   depth?: { buy?: Array<{ price: number; quantity: number }>; sell?: Array<{ price: number; quantity: number }> };
   timestamp?: string;

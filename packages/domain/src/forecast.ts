@@ -5,6 +5,55 @@ import { decimalStringSchema } from "./money.js";
 export const forecastHorizonSchema = z.enum(["SESSION", "EXPIRY", "SWING", "POSITIONAL"]);
 export type ForecastHorizon = z.infer<typeof forecastHorizonSchema>;
 
+export const playStatusSchema = z.enum(["OPEN", "DISMISSED", "FILLED", "PARTIAL", "MISSED", "EXPIRED"]);
+export type PlayStatus = z.infer<typeof playStatusSchema>;
+
+export const playLaneSchema = z.enum(["FNO", "CASH"]);
+export type PlayLane = z.infer<typeof playLaneSchema>;
+
+export const playSideSchema = z.enum(["CE", "PE", "EQ", "FUT"]);
+export type PlaySide = z.infer<typeof playSideSchema>;
+
+export const playHorizonSchema = z.enum(["SESSION", "EXPIRY", "SWING", "POSITION", "INTRADAY"]);
+export type PlayHorizon = z.infer<typeof playHorizonSchema>;
+
+export const playSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  lane: playLaneSchema,
+  side: playSideSchema,
+  contract: z.string(),
+  exchange: z.string(),
+  underlying: z.string(),
+  expiry: z.string().nullable(),
+  status: playStatusSchema,
+  entryZone: z.string(),
+  stop: z.string(),
+  targets: z.array(z.string()),
+  holdUntil: z.string(),
+  invalidation: z.string(),
+  edgeAfterCost: z.string().nullable(),
+  confidence: z.number(),
+  regime: marketRegimeSchema,
+  why: z.array(z.string()),
+  eodSpot: z.string().nullable().optional(),
+  eodPremium: z.string().nullable().optional(),
+  pcr: z.number().nullable().optional(),
+  ivRank: z.number().nullable().optional(),
+  thetaNote: z.string().nullable().optional(),
+  horizon: playHorizonSchema.optional(),
+  rsVsNifty: z.number().nullable().optional(),
+  atrStop: z.string().nullable().optional(),
+  rank: z.number().nullable().optional(),
+  dismissedAt: z.string().nullable().optional(),
+  brokerOrderId: z.string().nullable().optional(),
+  fillQty: z.number().nullable().optional(),
+  fillPx: z.string().nullable().optional(),
+  setupKey: z.string().optional(),
+  expectancyNote: z.string().nullable().optional(),
+});
+export type Play = z.infer<typeof playSchema>;
+
 export const forecastBiasSchema = z.enum(["BULLISH", "BEARISH", "RANGE"]);
 export type ForecastBias = z.infer<typeof forecastBiasSchema>;
 
@@ -75,6 +124,14 @@ export const forecastSchema = z.object({
     llm: z.string().optional(),
     aiStudy: aiStudySchema.optional(),
     aiError: z.string().optional(),
+    desk: z
+      .object({
+        votes: z.array(z.object({ name: z.string(), vote: z.number(), detail: z.string() })),
+        vwap: z.string().nullable(),
+        orbHigh: z.string().nullable(),
+        orbLow: z.string().nullable(),
+      })
+      .optional(),
   }),
   copilotAction: z.string(),
   autoEligible: z.boolean(),

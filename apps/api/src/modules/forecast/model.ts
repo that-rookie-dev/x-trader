@@ -1,5 +1,5 @@
 import { money, type ForecastBias, type MarketRegime } from "@xtrader/domain";
-import { atr, centralPivotRange, classifyRegime, ema, macd, rsi, sessionVwap, sma, supertrend } from "../indicators/index.js";
+import { adx, atr, centralPivotRange, classifyRegime, ema, macd, rsi, sessionVwap, sma, supertrend, volumeAverage } from "../indicators/index.js";
 import { sessionLevels, structureLevels } from "./levels.js";
 
 export type Bar = { time?: number; open?: number; high: number; low: number; close: number; volume?: number };
@@ -16,6 +16,8 @@ export type DeskModel = {
   vwap: number | null;
   cpr: ReturnType<typeof centralPivotRange> | null;
   orb: { high: number; low: number } | null;
+  adx: { adx: number; plusDi: number; minusDi: number } | null;
+  volumeOrb: boolean;
   supports: string[];
   resistances: string[];
   magnet: number;
@@ -66,6 +68,7 @@ export function buildDeskModel(input: {
   const rsiI = rsi(intraCloses, 14) ?? rsiD;
   const macdD = macd(dailyCloses);
   const trend = supertrend(daily.length >= 12 ? daily : five);
+  const adxVal = adx(daily.length >= 30 ? daily : five, 14);
   const regime = classifyRegime(dailyCloses, atrVal) as MarketRegime;
 
   const signals: DeskSignal[] = [];
@@ -108,9 +111,23 @@ export function buildDeskModel(input: {
     const vote: -1 | 0 | 1 = macdD.hist > 0 && macdD.line > 0 ? 1 : macdD.hist < 0 && macdD.line < 0 ? -1 : 0;
     signals.push({ name: "MACD", vote, weight: WEIGHTS.macd, detail: macdD.hist > 0 ? "hist+" : "hist-" });
   }
+  const lastBar = five.at(-1) ?? daily.at(-1);
+  const sessionVols = five.filter((b) => (b.volume ?? 0) > 0).map((b) => b.volume ?? 0);
+  const volMean = volumeAverage(sessionVols, Math.min(20, sessionVols.length));
+  const volumeOrb = Boolean(lastBar && volMean && (lastBar.volume ?? 0) > volMean * 1.2);
   if (orb) {
-    const vote: -1 | 0 | 1 = last > orb.high ? 1 : last < orb.low ? -1 : 0;
-    signals.push({ name: "ORB", vote, weight: WEIGHTS.orb, detail: vote ? "broke range" : "inside 9:15-9:30" });
+    const broke = last > orb.high || last < orb.low;
+    const vote: -1 | 0 | 1 = !broke ? 0 : !volumeOrb ? 0 : last > orb.high ? 1 : -1;
+    signals.push({
+      name: "ORB",
+      vote,
+      weight: WEIGHTS.orb,
+      detail: !broke ? "inside 9:15-9:30" : volumeOrb ? "broke range on volume" : "broke but thin volume",
+    });
+  }
+  if (adxVal) {
+    const vote: -1 | 0 | 1 = adxVal.adx < 20 ? 0 : adxVal.plusDi > adxVal.minusDi ? 1 : -1;
+    signals.push({ name: "ADX", vote, weight: 0.08, detail: `ADX ${adxVal.adx.toFixed(0)}` });
   }
   if (vwap != null) {
     const band = Math.max(atrVal * 0.08, last * 0.0006);
@@ -175,6 +192,8 @@ export function buildDeskModel(input: {
     vwap,
     cpr,
     orb,
+    adx: adxVal,
+    volumeOrb,
     supports: supports.map((n) => money(n, 2)),
     resistances: resistances.map((n) => money(n, 2)),
     magnet,

@@ -18,6 +18,8 @@ import type { StrategyEngine } from "../modules/strategy/engine.js";
 import type { ResearchService } from "../modules/research/service.js";
 import type { ForecastEngine } from "../modules/forecast/engine.js";
 import type { AgentLoop } from "../modules/agent/loop.js";
+import type { SignalStore } from "../modules/forecast/signals.js";
+import type { PlayStore } from "../modules/forecast/plays.js";
 
 export interface AppServices {
   env: Env;
@@ -41,4 +43,6 @@ export interface AppServices {
   research: ResearchService;
   forecasts: ForecastEngine;
   agent: AgentLoop;
+  signals: SignalStore;
+  plays: PlayStore;
 }

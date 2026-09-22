@@ -67,6 +67,8 @@ describe("EOD option estimate", () => {
   });
 });
 
+const OPEN = new Date("2026-06-15T04:30:00.000Z");
+
 describe("cheap-side option buys", () => {
   it("buys PE below spot when the index is expected lower, not ITM PE above spot", () => {
     const otm = eodTradeView({
@@ -79,6 +81,7 @@ describe("cheap-side option buys", () => {
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
+      now: OPEN,
     });
     const itm = eodTradeView({
       kind: "PE",
@@ -90,6 +93,7 @@ describe("cheap-side option buys", () => {
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
+      now: OPEN,
     });
     expect(otm.mark).toBe("BUY");
     expect(itm.mark).toBe("NO_BUY");
@@ -107,6 +111,7 @@ describe("cheap-side option buys", () => {
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
+      now: OPEN,
     });
     const itm = eodTradeView({
       kind: "CE",
@@ -118,6 +123,7 @@ describe("cheap-side option buys", () => {
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
+      now: OPEN,
     });
     expect(otm.mark).toBe("BUY");
     expect(itm.mark).toBe("NO_BUY");
@@ -134,6 +140,7 @@ describe("cheap-side option buys", () => {
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
+      now: OPEN,
     });
     expect(ce.mark).toBe("NO_BUY");
     expect(ce.why).toMatch(/PE below spot/i);

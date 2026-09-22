@@ -65,7 +65,7 @@ export default function AccountPage() {
             <div className="value">{profile.clientId}</div>
             <div className="muted">{profile.userName}</div>
           </div>
-          <div className="card kpi">
+          <div className="card kpi" data-coach="funds">
             <div className="label">Real cash available</div>
             <div className="value">{funds?.equity.available ?? "—"}</div>
           </div>
@@ -76,6 +76,28 @@ export default function AccountPage() {
           </div>
         </div>
       ) : null}
+      <div className="card" data-coach="read-only">
+        <h2>We only read after you trade</h2>
+        <p className="muted" data-coach="fill">This app never sends a live order. After you buy on Zerodha, dismiss the play on Options. We match the fill and learn. A miss is not a win.</p>
+      </div>
+      <div className="card">
+        <h2>Replay a tutorial</h2>
+        <p className="muted">Walk the desk again any time. One step, then the next.</p>
+        <div className="row" style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}>
+          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "options" }))}>
+            Options desk
+          </button>
+          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "stocks" }))}>
+            Stocks
+          </button>
+          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "zerodha" }))}>
+            Zerodha
+          </button>
+          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "alerts" }))}>
+            Alerts
+          </button>
+        </div>
+      </div>
       <div className="card">
         <h2>What you really own</h2>
         {!holdings ? (
