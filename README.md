@@ -7,7 +7,7 @@ Personal analysis / forecast desk for Indian F&O and stocks. **Never places orde
 Requires **Node.js 20.11+** (the installer downloads a local copy automatically if Node is missing). No Docker — PostgreSQL is bundled.
 
 ```bash
-curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/that-rookie-dev/x-trader/main/scripts/install.sh | bash
 ```
 
 The installer **starts the desk automatically** and opens **http://localhost:3456** when it’s ready. On first load, paste your Kite Connect API key and secret (stored encrypted locally).
@@ -34,7 +34,7 @@ The UI also shows an update banner when a newer release is published.
 Removes the app, launch agent/systemd unit, and **all local data** (`~/.xtrader` including Postgres + vault):
 
 ```bash
-curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/that-rookie-dev/x-trader/main/scripts/uninstall.sh | bash
 # or: ~/.xtrader/uninstall.sh
 ```
 ## Run from source

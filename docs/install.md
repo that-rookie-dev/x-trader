@@ -4,16 +4,16 @@ xTrader ships a built Node app and PostgreSQL binaries inside a GitHub Release. 
 
 If **Node.js 20.11+** is not on your PATH, the installer downloads an official Node binary into `~/.xtrader/runtime` (no sudo). If that fails, it prints short install instructions and exits.
 
-## From a release
+## Install
 
 ```bash
-curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/that-rookie-dev/x-trader/main/scripts/install.sh | bash
 ```
 
 Or download and run:
 
 ```bash
-curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/that-rookie-dev/x-trader/main/scripts/install.sh -o install.sh
 chmod +x install.sh
 ./install.sh
 ```
@@ -60,7 +60,7 @@ When a newer GitHub Release exists, the UI shows an **Update available** banner.
 Wipes the install directory (app binaries, Postgres data, paper wallet, encrypted Kite vault, logs) and removes launchd/systemd units:
 
 ```bash
-curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/that-rookie-dev/x-trader/main/scripts/uninstall.sh | bash
 ```
 
 Or run `~/.xtrader/uninstall.sh`. The script asks you to type `uninstall` to confirm (works with `curl | bash` via the terminal).
@@ -91,7 +91,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The `release` workflow builds four platform tarballs (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64` on `macos-15-intel`) plus `install.sh` and attaches them to the GitHub Release.
+The `release` workflow builds four platform tarballs (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64` on `macos-15-intel`) and attaches them to the GitHub Release. The installer and uninstaller are always read from the repository's `main` branch.
 
 Local dry-run after `npm run build`:
 

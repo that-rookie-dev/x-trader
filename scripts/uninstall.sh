@@ -3,7 +3,7 @@ set -euo pipefail
 
 # xTrader uninstall — stops services and deletes the install + all local data.
 # Usage:
-#   curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/that-rookie-dev/x-trader/main/scripts/uninstall.sh | bash
 #   ~/.xtrader/uninstall.sh
 
 PREFIX="${XTRADER_HOME:-$HOME/.xtrader}"
@@ -173,7 +173,7 @@ if [[ "$FANCY" -eq 1 ]]; then
 ${C_GREEN}${C_BOLD}   v CLOSED  ·  UNINSTALL COMPLETE${C_RESET}
 ${C_MUTED}   App, vault, and local market data are gone.
    Re-enter anytime:${C_RESET}
-${C_GOLD}   curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash${C_RESET}
+${C_GOLD}   curl -fsSL https://raw.githubusercontent.com/that-rookie-dev/x-trader/main/scripts/install.sh | bash${C_RESET}
 EOF
 else
   echo "xTrader uninstalled. Removed $PREFIX"

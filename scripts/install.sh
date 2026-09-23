@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# xTrader installer (no Docker). Attached to GitHub Releases for that-rookie-dev/x-trader.
+# xTrader installer (no Docker). Run directly from the repository's main branch.
 
 PREFIX="${XTRADER_HOME:-$HOME/.xtrader}"
 REPO="${XTRADER_REPO:-that-rookie-dev/x-trader}"
@@ -229,7 +229,7 @@ print_node_instructions() {
   echo
   echo "Verify, then install xTrader again:"
   echo "  node -v"
-  echo "  curl -fsSL https://github.com/${REPO}/releases/latest/download/install.sh | bash"
+  echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh | bash"
   echo
   exit 1
 }
@@ -492,6 +492,29 @@ find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name var ! -name .env ! -name runtime 
 tar -xzf "$tmp/xtrader.tgz" -C "$PREFIX"
 if [[ -f "$tmp/dotenv.bak" ]]; then
   mv "$tmp/dotenv.bak" "$PREFIX/.env"
+fi
+
+# The app bundle is versioned, but installer maintenance scripts always come
+# from main so installer/uninstaller fixes do not require a new app release.
+for script_name in install uninstall; do
+  if ! curl -fsSL \
+    --retry 3 \
+    --connect-timeout 20 \
+    "https://raw.githubusercontent.com/${REPO}/main/scripts/${script_name}.sh" \
+    -o "$tmp/${script_name}.sh"; then
+    die "Could not download the current ${script_name} script."
+  fi
+  cp "$tmp/${script_name}.sh" "$PREFIX/${script_name}.sh"
+  cp "$tmp/${script_name}.sh" "$PREFIX/scripts/${script_name}.sh"
+done
+
+if [[ ! -f "$PREFIX/bin/xtraderctl" ]]; then
+  if ! download_file \
+    "Downloading current command controller" \
+    "https://raw.githubusercontent.com/${REPO}/main/scripts/xtraderctl.sh" \
+    "$PREFIX/bin/xtraderctl"; then
+    die "Could not download the xTrader command controller."
+  fi
 fi
 mkdir -p "$PREFIX/bin" "$PREFIX/var"
 chmod +x "$PREFIX/install.sh" 2>/dev/null || true
