@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="xTrader is a private, local-first analysis and forecasting desk for Indian F&O and stocks.">
+  <meta name="theme-color" content="#050706">
+  <meta property="og:title" content="xTrader — Your edge. Your machine.">
+  <meta property="og:description" content="A private, local-first market intelligence desk for Indian F&O and stocks.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://that-rookie-dev.github.io/x-trader/">
+  <title>xTrader — Private market intelligence</title>
+  <style>
+    :root {
+      --ink: #f3f7f4;
+      --muted: #89948d;
+      --dim: #59625c;
+      --bg: #050706;
+      --panel: #0a0e0c;
+      --panel-2: #0d1310;
+      --line: rgba(180, 255, 196, .12);
+      --line-strong: rgba(180, 255, 196, .25);
+      --lime: #b9ff66;
+      --green: #47e69a;
+      --cyan: #73e6ff;
+      --red: #ff6b78;
+      --amber: #f1c75b;
+      --grid: rgba(185, 255, 102, .035);
+      --max: 1180px;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --sans: Inter, "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 82% 8%, rgba(71, 230, 154, .085), transparent 29rem),
+        radial-gradient(circle at 8% 55%, rgba(115, 230, 255, .045), transparent 32rem),
+        var(--bg);
+      font-family: var(--sans);
+      line-height: 1.55;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -1;
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(to bottom, #000 0%, transparent 72%);
+    }
+
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; }
+    code { font-family: var(--mono); }
+    ::selection { background: var(--lime); color: #071008; }
+
+    .shell { width: min(var(--max), calc(100% - 40px)); margin: 0 auto; }
+    .mono { font-family: var(--mono); }
+    .lime { color: var(--lime); }
+    .red { color: var(--red); }
+    .cyan { color: var(--cyan); }
+    .muted { color: var(--muted); }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      border-bottom: 1px solid rgba(185, 255, 102, .1);
+      background: rgba(5, 7, 6, .78);
+      backdrop-filter: blur(18px);
+    }
+
+    nav {
+      height: 70px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      margin-right: auto;
+      font-size: 17px;
+      font-weight: 760;
+      letter-spacing: -.03em;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(135deg, rgba(185, 255, 102, .17), rgba(71, 230, 154, .03));
+      color: var(--lime);
+      font: 800 12px/1 var(--mono);
+      box-shadow: inset 0 0 22px rgba(185, 255, 102, .06);
+    }
+
+    .nav-links { display: flex; gap: 24px; color: var(--muted); font-size: 13px; }
+    .nav-links a:hover { color: var(--ink); }
+
+    .nav-cta, .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 42px;
+      padding: 0 17px;
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 255, 255, .02);
+      color: var(--ink);
+      cursor: pointer;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+    }
+
+    .nav-cta { min-height: 36px; font: 700 12px/1 var(--mono); }
+    .btn:hover, .nav-cta:hover {
+      transform: translateY(-2px);
+      border-color: rgba(185, 255, 102, .52);
+      background: rgba(185, 255, 102, .06);
+    }
+    .btn.primary {
+      background: var(--lime);
+      color: #081007;
+      border-color: var(--lime);
+      font-weight: 800;
+    }
+    .btn.primary:hover { background: #d2ff9c; }
+
+    .hero {
+      min-height: calc(100vh - 70px);
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      align-items: center;
+      gap: 76px;
+      padding: 90px 0 80px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--lime);
+      font: 700 11px/1 var(--mono);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      background: var(--green);
+      box-shadow: 0 0 16px var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 25px 0 24px;
+      font-size: clamp(53px, 7.5vw, 100px);
+      line-height: .9;
+      letter-spacing: -.075em;
+      font-weight: 770;
+    }
+    h1 span {
+      display: block;
+      color: transparent;
+      -webkit-text-stroke: 1px rgba(243, 247, 244, .48);
+    }
+
+    .hero-copy > p {
+      max-width: 620px;
+      margin: 0;
+      color: #aab4ad;
+      font-size: clamp(17px, 2vw, 21px);
+      line-height: 1.65;
+    }
+
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 34px; }
+    .hero-facts {
+      display: flex;
+      gap: 25px;
+      flex-wrap: wrap;
+      margin-top: 38px;
+      color: var(--dim);
+      font: 11px/1.5 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .hero-facts b { color: var(--ink); font-weight: 650; }
+
+    .terminal {
+      position: relative;
+      min-width: 0;
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(160deg, rgba(15, 22, 18, .98), rgba(6, 9, 7, .98));
+      box-shadow: 0 40px 100px rgba(0, 0, 0, .58), 0 0 0 1px rgba(0, 0, 0, .35);
+      transform: perspective(1200px) rotateY(-4deg) rotateX(1.5deg);
+    }
+    .terminal::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      pointer-events: none;
+      background: linear-gradient(110deg, transparent 35%, rgba(185, 255, 102, .13), transparent 60%);
+      transform: translateX(-120%);
+      animation: scan 7s infinite;
+    }
+
+    .window-bar {
+      height: 45px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      color: var(--dim);
+      font: 10px/1 var(--mono);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #344239; }
+    .window-title { margin-left: auto; letter-spacing: .08em; }
+    .desk { padding: 17px; }
+    .ticker-row {
+      display: grid;
+      grid-template-columns: 1.4fr .8fr .7fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .micro {
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.012);
+    }
+    .micro label { display: block; color: var(--dim); font: 9px/1 var(--mono); letter-spacing: .11em; }
+    .micro strong { display: block; margin-top: 8px; font: 700 14px/1 var(--mono); }
+
+    .chart {
+      position: relative;
+      height: 245px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(rgba(185,255,102,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(185,255,102,.045) 1px, transparent 1px);
+      background-size: 100% 49px, 54px 100%;
+      overflow: hidden;
+    }
+    .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .chart-line {
+      stroke-dasharray: 900;
+      stroke-dashoffset: 900;
+      animation: draw 3.4s ease forwards .35s;
+    }
+    .chart-caption {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 2;
+      font: 10px/1.6 var(--mono);
+      color: var(--muted);
+    }
+    .target {
+      position: absolute;
+      right: 0;
+      top: 69px;
+      padding: 5px 8px;
+      background: var(--lime);
+      color: #081007;
+      font: 800 9px/1 var(--mono);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+      margin-top: 10px;
+    }
+    .flow > div {
+      padding: 11px;
+      border: 1px solid var(--line);
+      font: 9px/1.5 var(--mono);
+      color: var(--muted);
+    }
+    .flow b { display: block; color: var(--ink); font-size: 11px; }
+
+    .ticker-tape {
+      overflow: hidden;
+      border-block: 1px solid var(--line);
+      background: #070a08;
+      white-space: nowrap;
+    }
+    .ticker-track {
+      display: inline-flex;
+      min-width: max-content;
+      animation: ticker 34s linear infinite;
+    }
+    .tick {
+      padding: 15px 28px;
+      color: var(--muted);
+      font: 10px/1 var(--mono);
+      border-right: 1px solid var(--line);
+    }
+    .tick b { margin-left: 8px; color: var(--ink); }
+
+    section { padding: 116px 0; }
+    .section-head {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: end;
+      gap: 40px;
+      margin-bottom: 48px;
+    }
+    .kicker {
+      margin-bottom: 15px;
+      color: var(--lime);
+      font: 700 10px/1 var(--mono);
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    h2 {
+      margin: 0;
+      font-size: clamp(38px, 5vw, 66px);
+      line-height: .98;
+      letter-spacing: -.055em;
+    }
+    .section-head p { margin: 0; color: var(--muted); font-size: 17px; }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+    .feature {
+      grid-column: span 4;
+      min-height: 268px;
+      padding: 29px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(10, 14, 12, .55);
+      transition: background .2s ease;
+    }
+    .feature:hover { background: rgba(16, 24, 19, .8); }
+    .feature.wide { grid-column: span 8; }
+    .feature-number {
+      display: flex;
+      justify-content: space-between;
+      color: var(--dim);
+      font: 10px/1 var(--mono);
+    }
+    .feature-number i { color: var(--lime); font-style: normal; }
+    .feature h3 { margin: 50px 0 12px; font-size: 22px; letter-spacing: -.03em; }
+    .feature p { margin: 0; color: var(--muted); font-size: 14px; }
+    .feature .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 22px; }
+    .tag { padding: 5px 7px; border: 1px solid var(--line); color: var(--dim); font: 8px/1 var(--mono); }
+
+    .signal-map {
+      margin-top: 35px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .signal {
+      position: relative;
+      padding: 23px 14px;
+      text-align: center;
+      border-right: 1px solid var(--line);
+      font: 10px/1.45 var(--mono);
+      color: var(--muted);
+    }
+    .signal:last-child { border-right: 0; }
+    .signal::after {
+      content: ">";
+      position: absolute;
+      right: -5px;
+      top: calc(50% - 7px);
+      z-index: 2;
+      color: var(--lime);
+      background: var(--panel);
+    }
+    .signal:last-child::after { display: none; }
+    .signal b { display: block; margin-bottom: 7px; color: var(--ink); }
+
+    .learning-wrap {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 18px;
+    }
+    .learning-copy, .learning-ui {
+      border: 1px solid var(--line);
+      background: rgba(10, 14, 12, .7);
+    }
+    .learning-copy { padding: 48px; }
+    .learning-copy h3 { margin: 18px 0; font-size: 35px; letter-spacing: -.04em; }
+    .learning-copy p { color: var(--muted); }
+    .learning-list { list-style: none; padding: 0; margin: 30px 0 0; }
+    .learning-list li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+      color: #b6c0ba;
+      font-size: 13px;
+    }
+    .learning-list li::before { content: "01"; color: var(--lime); font: 9px/1 var(--mono); }
+    .learning-list li:nth-child(2)::before { content: "02"; }
+    .learning-list li:nth-child(3)::before { content: "03"; }
+    .learning-list li:nth-child(4)::before { content: "04"; }
+
+    .learning-ui { padding: 26px; }
+    .ui-top { display: flex; align-items: center; justify-content: space-between; font: 10px/1 var(--mono); color: var(--muted); }
+    .toggle {
+      display: flex;
+      border: 1px solid var(--line);
+    }
+    .toggle span { padding: 7px 10px; }
+    .toggle .on { background: var(--lime); color: #081007; }
+    .progress-card { margin-top: 24px; padding: 22px; border: 1px solid var(--line); }
+    .progress-meta { display: flex; justify-content: space-between; font: 11px/1 var(--mono); }
+    .progress {
+      height: 7px;
+      margin: 15px 0 11px;
+      background: #161d18;
+      overflow: hidden;
+    }
+    .progress > i {
+      display: block;
+      width: 78%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--green), var(--lime));
+      box-shadow: 0 0 18px rgba(185,255,102,.32);
+      animation: breathe 3s infinite;
+    }
+    .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+    .metric { padding: 19px; border: 1px solid var(--line); }
+    .metric label { color: var(--dim); font: 9px/1 var(--mono); }
+    .metric strong { display: block; margin-top: 10px; font: 700 22px/1 var(--mono); }
+
+    .privacy {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      padding: 76px;
+      background: linear-gradient(105deg, #0d1510, #070a08 60%);
+    }
+    .privacy::after {
+      content: "LOCAL";
+      position: absolute;
+      right: -20px;
+      bottom: -46px;
+      color: rgba(185,255,102,.035);
+      font: 900 180px/1 var(--mono);
+      letter-spacing: -.08em;
+    }
+    .privacy h2 { max-width: 760px; }
+    .privacy > p { max-width: 640px; margin: 25px 0 0; color: var(--muted); font-size: 17px; }
+    .privacy-points { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 33px; }
+    .privacy-points span { padding: 8px 10px; border: 1px solid var(--line); color: #adb8b1; font: 9px/1 var(--mono); }
+
+    .install-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 55px; }
+    .install-copy h2 { margin: 0 0 25px; }
+    .install-copy p { color: var(--muted); }
+    .compat { margin-top: 25px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .compat span { border: 1px solid var(--line); padding: 7px 9px; color: var(--dim); font: 9px/1 var(--mono); }
+
+    .install-panel { border: 1px solid var(--line-strong); background: #070a08; }
+    .install-tabs { display: flex; border-bottom: 1px solid var(--line); }
+    .install-tabs span { padding: 14px 16px; color: var(--muted); font: 10px/1 var(--mono); border-right: 1px solid var(--line); }
+    .install-tabs .active { color: var(--lime); background: rgba(185,255,102,.04); }
+    .command {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 26px;
+    }
+    .command code {
+      color: #c7d2ca;
+      font-size: 12px;
+      line-height: 1.75;
+      overflow-wrap: anywhere;
+    }
+    .copy {
+      min-width: 74px;
+      height: 34px;
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--lime);
+      cursor: pointer;
+      font: 700 9px/1 var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .copy:hover { background: rgba(185,255,102,.07); }
+    .steps { border-top: 1px solid var(--line); padding: 0 26px 22px; }
+    .step {
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 12px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .step:last-child { border-bottom: 0; }
+    .step-num { color: var(--lime); font: 10px/1.5 var(--mono); }
+    .step p { margin: 0; color: var(--muted); font-size: 13px; }
+    .step b { color: var(--ink); }
+
+    .faq { display: grid; grid-template-columns: 1fr 1.3fr; gap: 70px; }
+    .faq-list { border-top: 1px solid var(--line); }
+    details { border-bottom: 1px solid var(--line); }
+    summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 22px 0;
+      cursor: pointer;
+      list-style: none;
+      font-weight: 650;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; color: var(--lime); font: 20px/1 var(--mono); }
+    details[open] summary::after { content: "−"; }
+    details p { margin: -4px 0 23px; color: var(--muted); font-size: 14px; }
+
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 50px 0;
+    }
+    .footer-grid { display: flex; justify-content: space-between; align-items: center; gap: 30px; }
+    .footer-note { color: var(--dim); font: 10px/1.6 var(--mono); }
+    .footer-links { display: flex; gap: 20px; color: var(--muted); font-size: 12px; }
+    .footer-links a:hover { color: var(--lime); }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(22px);
+      transition: opacity .65s ease, transform .65s ease;
+    }
+    .reveal.on { opacity: 1; transform: none; }
+
+    @keyframes pulse { 50% { opacity: .35; box-shadow: 0 0 3px var(--green); } }
+    @keyframes scan { 0%, 63% { transform: translateX(-120%); } 78%, 100% { transform: translateX(120%); } }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes ticker { to { transform: translateX(-50%); } }
+    @keyframes breathe { 50% { opacity: .65; } }
+
+    @media (max-width: 920px) {
+      .nav-links { display: none; }
+      .hero { grid-template-columns: 1fr; gap: 55px; padding-top: 70px; }
+      .terminal { transform: none; max-width: 680px; }
+      .section-head, .learning-wrap, .install-grid, .faq { grid-template-columns: 1fr; }
+      .feature { grid-column: span 6; }
+      .feature.wide { grid-column: span 12; }
+      .signal-map { grid-template-columns: repeat(3, 1fr); }
+      .signal:nth-child(3) { border-right: 0; }
+      .signal:nth-child(3)::after { display: none; }
+      .privacy { padding: 48px; }
+    }
+
+    @media (max-width: 600px) {
+      .shell { width: min(100% - 24px, var(--max)); }
+      nav { height: 62px; }
+      .nav-cta { display: none; }
+      .hero { min-height: auto; padding: 65px 0 60px; }
+      h1 { font-size: 55px; }
+      section { padding: 82px 0; }
+      .section-head { margin-bottom: 30px; }
+      .feature, .feature.wide { grid-column: span 12; min-height: 230px; }
+      .feature h3 { margin-top: 38px; }
+      .signal-map { grid-template-columns: repeat(2, 1fr); }
+      .signal:nth-child(2n) { border-right: 0; }
+      .signal:nth-child(2n)::after { display: none; }
+      .learning-copy, .learning-ui, .privacy { padding: 28px; }
+      .ticker-row, .flow { grid-template-columns: 1fr 1fr; }
+      .ticker-row .micro:last-child, .flow > div:last-child { grid-column: span 2; }
+      .chart { height: 210px; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .command { grid-template-columns: 1fr; }
+      .copy { width: 100%; }
+      .footer-grid { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+      .reveal { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <nav class="shell" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="xTrader home">
+        <span class="brand-mark">XT</span>
+        <span>xTrader</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#learning">Learning</a>
+        <a href="#install">Install</a>
+        <a href="#faq">FAQ</a>
+      </div>
+      <a class="nav-cta" href="https://github.com/that-rookie-dev/x-trader" target="_blank" rel="noreferrer">VIEW SOURCE ↗</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <div class="shell hero">
+      <div class="hero-copy reveal">
+        <div class="eyebrow">Private market intelligence</div>
+        <h1>Your edge.<span>Your machine.</span></h1>
+        <p>
+          A local-first analysis and forecasting desk for Indian F&amp;O and stocks.
+          Live structure, options flow, explainable forecasts, and a learning loop—
+          without handing execution to a black box.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="#install">Install xTrader <span>↓</span></a>
+          <a class="btn" href="https://github.com/that-rookie-dev/x-trader/releases/latest" target="_blank" rel="noreferrer">Latest release ↗</a>
+        </div>
+        <div class="hero-facts">
+          <span><b>Local-first</b><br>Postgres included</span>
+          <span><b>Read-only</b><br>Zerodha access</span>
+          <span><b>One command</b><br>No Docker</span>
+        </div>
+      </div>
+
+      <div class="terminal reveal" aria-label="Preview of xTrader market desk">
+        <div class="window-bar">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="window-title">XTRADER / OPTIONS DESK</span>
+        </div>
+        <div class="desk">
+          <div class="ticker-row">
+            <div class="micro"><label>UNDERLYING</label><strong>NIFTY 50</strong></div>
+            <div class="micro"><label>LTP</label><strong class="lime">24,853.40</strong></div>
+            <div class="micro"><label>BIAS</label><strong class="cyan">BULLISH</strong></div>
+          </div>
+          <div class="chart">
+            <div class="chart-caption">EOD FORECAST / ALGO<br><span class="lime">TARGET 24,925</span></div>
+            <span class="target">24,925</span>
+            <svg viewBox="0 0 600 245" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#b9ff66" stop-opacity=".25"/>
+                  <stop offset="100%" stop-color="#b9ff66" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0 209 C43 199 49 161 85 171 S144 200 180 168 S239 103 272 124 S327 178 361 141 S418 76 454 104 S510 142 545 92 S578 70 600 55 L600 245 L0 245Z" fill="url(#area)"/>
+              <path class="chart-line" d="M0 209 C43 199 49 161 85 171 S144 200 180 168 S239 103 272 124 S327 178 361 141 S418 76 454 104 S510 142 545 92 S578 70 600 55" fill="none" stroke="#b9ff66" stroke-width="2.5"/>
+              <line x1="0" y1="70" x2="600" y2="70" stroke="#b9ff66" stroke-opacity=".4" stroke-dasharray="5 6"/>
+            </svg>
+          </div>
+          <div class="flow">
+            <div><b>PCR 1.17</b>put support</div>
+            <div><b>MAX PAIN 24,850</b>near spot</div>
+            <div><b>ERROR 0.14%</b>20 samples</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ticker-tape" aria-hidden="true">
+      <div class="ticker-track">
+        <span class="tick">NIFTY 50 <b class="lime">+0.62%</b></span>
+        <span class="tick">BANKNIFTY <b class="red">−0.18%</b></span>
+        <span class="tick">PCR <b>1.17</b></span>
+        <span class="tick">INDIA VIX <b class="lime">−2.40%</b></span>
+        <span class="tick">MAX PAIN <b>24,850</b></span>
+        <span class="tick">SENSEX <b class="lime">+0.47%</b></span>
+        <span class="tick">NIFTY 50 <b class="lime">+0.62%</b></span>
+        <span class="tick">BANKNIFTY <b class="red">−0.18%</b></span>
+        <span class="tick">PCR <b>1.17</b></span>
+        <span class="tick">INDIA VIX <b class="lime">−2.40%</b></span>
+        <span class="tick">MAX PAIN <b>24,850</b></span>
+        <span class="tick">SENSEX <b class="lime">+0.47%</b></span>
+      </div>
+    </div>
+
+    <section id="features">
+      <div class="shell">
+        <div class="section-head reveal">
+          <div>
+            <div class="kicker">01 / The desk</div>
+            <h2>Signal over noise.</h2>
+          </div>
+          <p>
+            xTrader turns live market data into a structured operating view:
+            levels, flow, risk, forecasts, and clear trade instructions—all in one place.
+          </p>
+        </div>
+
+        <div class="feature-grid reveal">
+          <article class="feature wide">
+            <div class="feature-number"><span>01</span><i>LIVE</i></div>
+            <h3>F&amp;O options intelligence</h3>
+            <p>Option-chain structure, PCR, max pain, open-interest concentration, expiry-aware strikes, CPR, VWAP, support and resistance—all assembled into one decision surface.</p>
+            <div class="tags"><span class="tag">OPTION CHAIN</span><span class="tag">OI</span><span class="tag">PCR</span><span class="tag">MAX PAIN</span><span class="tag">EXPIRY</span></div>
+          </article>
+          <article class="feature">
+            <div class="feature-number"><span>02</span><i>ALGO / AI</i></div>
+            <h3>Explainable EOD forecasts</h3>
+            <p>Switch between a mechanical equation and an AI-assisted branch. Inspect the target, parameter version, direction hit-rate, and prediction error.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-number"><span>03</span><i>READ-ONLY</i></div>
+            <h3>Zerodha account context</h3>
+            <p>Read live quotes, funds, holdings, positions, and fills. Credentials are entered in the app and encrypted locally with AES-GCM.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-number"><span>04</span><i>STOCKS</i></div>
+            <h3>Cash-market analysis</h3>
+            <p>Track F&amp;O stocks alongside indices. Review trend, momentum, regime, levels, and a deterministic risk gate before acting.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-number"><span>05</span><i>LOCAL</i></div>
+            <h3>Paper training wallet</h3>
+            <p>Record local training fills, track open and closed outcomes, and learn expectancy without ever sending a broker order.</p>
+          </article>
+          <article class="feature wide">
+            <div class="feature-number"><span>06</span><i>CONTROLLED</i></div>
+            <h3>Whitelist-only background tracking</h3>
+            <p>You choose the F&amp;O symbols. xTrader scans, forecasts, reconciles, and tunes only that list. Remove a symbol and its local history remains archived while disappearing from the UI.</p>
+            <div class="tags"><span class="tag">SETTINGS WHITELIST</span><span class="tag">BACKGROUND SCANS</span><span class="tag">LOCAL HISTORY</span><span class="tag">HALT CONTROL</span></div>
+          </article>
+        </div>
+
+        <div class="signal-map reveal" aria-label="xTrader analysis flow">
+          <div class="signal"><b>MARKET</b>live ticks</div>
+          <div class="signal"><b>STRUCTURE</b>levels + regime</div>
+          <div class="signal"><b>FLOW</b>OI + PCR + pain</div>
+          <div class="signal"><b>FORECAST</b>ALGO / AI</div>
+          <div class="signal"><b>RISK</b>deterministic gate</div>
+          <div class="signal"><b>INSTRUCTION</b>you execute</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="learning">
+      <div class="shell">
+        <div class="section-head reveal">
+          <div>
+            <div class="kicker">02 / The loop</div>
+            <h2>It learns. You stay in control.</h2>
+          </div>
+          <p>
+            Every whitelisted symbol gets its own forecast parameters and history.
+            The app resolves predictions after market close, measures error, and tunes the next session.
+          </p>
+        </div>
+
+        <div class="learning-wrap reveal">
+          <div class="learning-copy">
+            <div class="eyebrow">Session-aware training</div>
+            <h3>Closed-loop forecasting, without the mystery.</h3>
+            <p>Live scan cycles run during market hours. After close, one tune cycle resolves forecasts against actual closes and then stops at 100%.</p>
+            <ul class="learning-list">
+              <li>Per-symbol ALGO and AI parameter deltas</li>
+              <li>MAE, hit-rate, samples, and prediction ledger</li>
+              <li>Visible cycle progress and clear closure</li>
+              <li>Archived history for removed symbols</li>
+            </ul>
+          </div>
+          <div class="learning-ui">
+            <div class="ui-top">
+              <span>TRAINING / NIFTY 50</span>
+              <div class="toggle"><span class="on">ALGO</span><span>AI</span></div>
+            </div>
+            <div class="progress-card">
+              <div class="progress-meta"><span>TUNE CYCLE #12</span><b>78%</b></div>
+              <div class="progress"><i></i></div>
+              <div class="muted mono" style="font-size:9px">7 / 9 whitelisted symbols resolved</div>
+            </div>
+            <div class="metric-grid">
+              <div class="metric"><label>PREDICTIONS</label><strong>248</strong></div>
+              <div class="metric"><label>RESOLVED</label><strong>236</strong></div>
+              <div class="metric"><label>MAE</label><strong class="lime">0.18%</strong></div>
+              <div class="metric"><label>DIR HIT</label><strong class="cyan">64%</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="privacy reveal">
+          <div class="kicker">03 / Your machine</div>
+          <h2>Your data does not need a landlord.</h2>
+          <p>
+            xTrader runs on your computer. The database is bundled and loopback-only.
+            Kite credentials are encrypted in your local vault. Broker access is read-only,
+            and the execution path refuses live orders.
+          </p>
+          <div class="privacy-points">
+            <span>LOCAL POSTGRES</span>
+            <span>AES-GCM VAULT</span>
+            <span>NO DOCKER</span>
+            <span>READ-ONLY BROKER</span>
+            <span>NO CLOUD ACCOUNT</span>
+            <span>OPEN SOURCE</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="shell install-grid">
+        <div class="install-copy reveal">
+          <div class="kicker">04 / Install</div>
+          <h2>From zero to desk in one command.</h2>
+          <p>
+            The installer detects your platform, downloads the correct bundle, provides Node locally if needed,
+            creates the encrypted runtime configuration, starts xTrader, and opens the desk.
+          </p>
+          <div class="compat">
+            <span>MACOS ARM64</span>
+            <span>MACOS X64</span>
+            <span>LINUX ARM64</span>
+            <span>LINUX X64</span>
+          </div>
+          <p style="margin-top:24px;font-size:13px">No Docker. No global database. No manual build.</p>
+        </div>
+
+        <div class="install-panel reveal">
+          <div class="install-tabs"><span class="active">INSTALL</span><span>TERMINAL</span></div>
+          <div class="command">
+            <code id="install-command">curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash</code>
+            <button class="copy" type="button" data-copy="install-command">Copy</button>
+          </div>
+          <div class="steps">
+            <div class="step"><span class="step-num">01</span><p><b>Run the command.</b> The installer detects macOS/Linux and x64/arm64.</p></div>
+            <div class="step"><span class="step-num">02</span><p><b>Wait for startup.</b> Node and PostgreSQL are handled; xTrader opens automatically.</p></div>
+            <div class="step"><span class="step-num">03</span><p><b>Connect Zerodha.</b> Enter your Kite key and secret in the encrypted first-run UI.</p></div>
+            <div class="step"><span class="step-num">04</span><p><b>Set Kite redirect URL.</b> <code>http://localhost:3456/zerodha/callback</code></p></div>
+          </div>
+          <div class="install-tabs"><span class="active">UNINSTALL</span><span>APP + ALL LOCAL DATA</span></div>
+          <div class="command">
+            <code id="uninstall-command">curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash</code>
+            <button class="copy" type="button" data-copy="uninstall-command">Copy</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="shell faq">
+        <div class="reveal">
+          <div class="kicker">05 / FAQ</div>
+          <h2>Straight answers.</h2>
+        </div>
+        <div class="faq-list reveal">
+          <details>
+            <summary>Does xTrader place live orders?</summary>
+            <p>No. It is an analysis and instruction desk. Zerodha access is read-only, and broker order adapters refuse placement. You execute trades yourself.</p>
+          </details>
+          <details>
+            <summary>Where is my data stored?</summary>
+            <p>On your machine under <code>~/.xtrader</code>. The bundle includes PostgreSQL and binds it to loopback only.</p>
+          </details>
+          <details>
+            <summary>Do I need Node or Docker?</summary>
+            <p>No Docker. If Node 20+ is missing, the installer downloads an official local Node runtime into the xTrader install directory.</p>
+          </details>
+          <details>
+            <summary>How do updates work?</summary>
+            <p>When a newer GitHub Release exists, xTrader shows an in-app update banner. Update &amp; restart preserves your database and configuration.</p>
+          </details>
+          <details>
+            <summary>What gets trained?</summary>
+            <p>Only F&amp;O symbols on your Settings whitelist. Removed symbols disappear from current UI metrics, but their historical data stays local for future use.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-grid">
+      <div>
+        <a class="brand" href="#top"><span class="brand-mark">XT</span><span>xTrader</span></a>
+        <p class="footer-note">PRIVATE MARKET INTELLIGENCE<br>BUILT FOR INDIAN F&amp;O</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/that-rookie-dev/x-trader" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/that-rookie-dev/x-trader/releases/latest" target="_blank" rel="noreferrer">Release</a>
+        <a href="https://github.com/that-rookie-dev/x-trader/blob/main/docs/install.md" target="_blank" rel="noreferrer">Docs</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("on");
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    document.querySelectorAll(".reveal").forEach((el) => observer.observe(el));
+
+    document.querySelectorAll("[data-copy]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const target = document.getElementById(button.dataset.copy);
+        if (!target) return;
+        const previous = button.textContent;
+        try {
+          await navigator.clipboard.writeText(target.textContent.trim());
+          button.textContent = "Copied";
+        } catch {
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          button.textContent = "Selected";
+        }
+        window.setTimeout(() => { button.textContent = previous; }, 1800);
+      });
+    });
+  </script>
+</body>
+</html>
