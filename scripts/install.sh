@@ -105,6 +105,22 @@ finish_step() {
   fi
 }
 
+download_file() {
+  local label="$1"
+  local url="$2"
+  local destination="$3"
+  stop_spin
+  printf '  %s\n' "$label"
+  curl -fL \
+    --retry 3 \
+    --retry-delay 2 \
+    --connect-timeout 20 \
+    --progress-bar \
+    --show-error \
+    -o "$destination" \
+    "$url"
+}
+
 die() {
   stop_spin
   printf '%s\n' "${C_RED}${C_BOLD}ERROR: $1${C_RESET}" >&2
@@ -184,9 +200,7 @@ install_portable_node() {
   local url="https://nodejs.org/dist/v${NODE_DIST_VERSION}/${dist}.tar.gz"
   local tgz="$tmp/node.tgz"
 
-  start_spin "Downloading Node.js v${NODE_DIST_VERSION}"
-  if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
-    -o "$tgz" "$url" 2>"$tmp/node-curl.err"; then
+  if ! download_file "Downloading Node.js v${NODE_DIST_VERSION}" "$url" "$tgz"; then
     return 1
   fi
 
@@ -231,14 +245,14 @@ ensure_node() {
   fi
 
   echo "  Node.js 20+ not found on PATH."
-  echo "  Installing Node v${NODE_DIST_VERSION} into $PREFIX/runtime (no admin password)…"
+  echo "  Installing Node v${NODE_DIST_VERSION} into $PREFIX/runtime (no admin password)..."
   if install_portable_node; then
     return 0
   fi
 
   echo "  Download from nodejs.org failed."
   if command -v brew >/dev/null 2>&1; then
-    echo "  Trying Homebrew…"
+    echo "  Trying Homebrew..."
     if try_brew_node; then
       return 0
     fi
@@ -302,11 +316,12 @@ start_via_nohup() {
   echo $! >"$PREFIX/var/xtrader.pid"
 }
 
-wait_healthy() {
+wait_ready() {
   local seconds="$1"
   local i
   for ((i = 1; i <= seconds; i++)); do
-    if curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:4000/api/health" 2>/dev/null; then
+    if curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:4000/api/health" 2>/dev/null \
+      && curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:3456" 2>/dev/null; then
       return 0
     fi
     sleep 1
@@ -347,11 +362,8 @@ else
   url="https://github.com/${REPO}/releases/download/${VERSION}/xtrader-${platform}.tar.gz"
 fi
 
-start_spin "Downloading release ($platform)"
-if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
-  -o "$tmp/xtrader.tgz" "$url" 2>"$tmp/curl.err"; then
-  err="$(tr '\n' ' ' <"$tmp/curl.err" 2>/dev/null || true)"
-  die "Download failed" "$url" "${err:-check network / release assets}"
+if ! download_file "Downloading release ($platform)" "$url" "$tmp/xtrader.tgz"; then
+  die "Download failed" "$url" "Check the network connection and release assets."
 fi
 size="$(du -h "$tmp/xtrader.tgz" 2>/dev/null | awk '{print $1}')"
 finish_step "Downloaded ${size:-bundle}"
@@ -477,9 +489,9 @@ if [[ -z "$started_via" ]]; then
 fi
 finish_step "Process started ($started_via)"
 
-start_spin "Waiting for http://127.0.0.1:4000/api/health"
+start_spin "Waiting for xTrader to respond"
 warm=0
-if wait_healthy 45; then
+if wait_ready 45; then
   warm=1
 fi
 
@@ -493,7 +505,7 @@ if [[ "$warm" -eq 0 ]]; then
   fi
   start_via_nohup
   started_via="background"
-  if wait_healthy 45; then
+  if wait_ready 45; then
     warm=1
   fi
 fi
@@ -506,11 +518,9 @@ if [[ "$warm" -eq 1 ]]; then
     xdg-open "http://localhost:3456" >/dev/null 2>&1 || true
   fi
 else
-  finish_step "Install finished (server still starting)"
-  echo "  Check logs: $PREFIX/var/xtrader.log"
-  if [[ -f "$PREFIX/var/launchd.err.log" ]]; then
-    echo "  launchd:  $PREFIX/var/launchd.err.log"
-  fi
+  die "xTrader did not start" \
+    "App log: $PREFIX/var/xtrader.log" \
+    "Service log: $PREFIX/var/launchd.err.log"
 fi
 
 if [[ -f "$PREFIX/scripts/uninstall.sh" ]]; then

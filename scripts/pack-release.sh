@@ -41,8 +41,9 @@ mkdir -p "$OUT/scripts"
 cp scripts/self-update.sh scripts/install.sh scripts/uninstall.sh scripts/prepare-web-standalone.sh "$OUT/scripts/"
 chmod +x "$OUT/scripts/"*.sh "$OUT/uninstall.sh"
 
-# Semver stamped into the install (CI tag preferred)
-VER="${GITHUB_REF_NAME:-}"
+# Semver stamped into the install. Manual rebuilds provide the release tag
+# explicitly because GITHUB_REF_NAME is the branch name during workflow_dispatch.
+VER="${XTRADER_RELEASE_VERSION:-${GITHUB_REF_NAME:-}}"
 if [[ -z "$VER" ]]; then
   VER="$(node -p "require('./package.json').version")"
 fi
