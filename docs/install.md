@@ -35,7 +35,7 @@ The script:
 
 On first open, xTrader shows a credentials screen. Paste your Kite Connect API key and secret; they are encrypted with AES-GCM in the local database. Revoke them later from **Settings**.
 
-In the [Kite Connect](https://developers.kite.zerodha.com/apps) app, set Redirect URL exactly to:
+In the [Kite Connect developer portal](https://developers.kite.trade/) app, set Redirect URL exactly to:
 
 `http://localhost:3456/zerodha/callback`
 

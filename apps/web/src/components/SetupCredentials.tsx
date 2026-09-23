@@ -13,7 +13,7 @@ const STEPS = [
   {
     n: "01",
     title: "Open Kite Connect",
-    body: "Go to developers.kite.zerodha.com and sign in with your Zerodha credentials.",
+    body: "Go to developers.kite.trade and sign in with your Zerodha credentials.",
   },
   {
     n: "02",
@@ -182,7 +182,7 @@ export function SetupCredentials({ redirectHint, onSaved }: Props) {
           </ol>
           <a
             className="btn creds-ext"
-            href="https://developers.kite.zerodha.com/apps"
+            href="https://developers.kite.trade/"
             target="_blank"
             rel="noreferrer"
           >
