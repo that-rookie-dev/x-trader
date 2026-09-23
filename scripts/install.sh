@@ -10,6 +10,7 @@ VERSION="${XTRADER_VERSION:-latest}"
 STEP=0
 TOTAL_STEPS=6
 SPIN_PID=""
+DOWNLOAD_PID=""
 FANCY=0
 NODE_BIN=""
 NODE_SOURCE="" # system | portable | brew
@@ -35,6 +36,11 @@ else
 fi
 
 cleanup_ui() {
+  if [[ -n "${DOWNLOAD_PID:-}" ]] && kill -0 "$DOWNLOAD_PID" 2>/dev/null; then
+    kill "$DOWNLOAD_PID" 2>/dev/null || true
+    wait "$DOWNLOAD_PID" 2>/dev/null || true
+  fi
+  DOWNLOAD_PID=""
   stop_spin
   printf '%s' "$SHOW_CUR" 2>/dev/null || true
 }
@@ -109,16 +115,70 @@ download_file() {
   local label="$1"
   local url="$2"
   local destination="$3"
+  local error_file="${destination}.curl.err"
+  local total bytes pct downloaded_mb total_mb next tick rc
   stop_spin
   printf '  %s\n' "$label"
+
+  total="$(
+    curl -fsIL --retry 2 --connect-timeout 10 "$url" 2>/dev/null \
+      | awk 'tolower($1) == "content-length:" { gsub("\r", "", $2); if ($2 ~ /^[0-9]+$/) size=$2 } END { print size + 0 }'
+  )"
+  rm -f "$destination" "$error_file"
+  : >"$destination"
   curl -fL \
     --retry 3 \
     --retry-delay 2 \
     --connect-timeout 20 \
-    --progress-bar \
+    --silent \
     --show-error \
     -o "$destination" \
-    "$url"
+    "$url" 2>"$error_file" &
+  DOWNLOAD_PID=$!
+  next=10
+  tick=0
+
+  if [[ "$FANCY" -eq 1 ]]; then
+    printf '%s' "$HIDE_CUR"
+  fi
+  while kill -0 "$DOWNLOAD_PID" 2>/dev/null; do
+    bytes="$(wc -c <"$destination" 2>/dev/null | tr -d ' ' || echo 0)"
+    [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
+    downloaded_mb=$(( bytes / 1048576 ))
+    if [[ "$total" -gt 0 ]]; then
+      pct=$(( bytes * 100 / total ))
+      [[ "$pct" -le 99 ]] || pct=99
+      total_mb=$(( (total + 1048575) / 1048576 ))
+      if [[ "$FANCY" -eq 1 ]]; then
+        printf '\r%s  [%s] %3d%%  %d / %d MB' \
+          "$C_CLEAR" "$(bar "$pct")" "$pct" "$downloaded_mb" "$total_mb"
+      elif [[ "$pct" -ge "$next" ]]; then
+        echo "  Downloaded ${pct}% (${downloaded_mb} / ${total_mb} MB)"
+        next=$(( ((pct / 10) + 1) * 10 ))
+      fi
+    elif [[ "$FANCY" -eq 1 ]]; then
+      printf '\r%s  Downloaded %d MB' "$C_CLEAR" "$downloaded_mb"
+    elif [[ "$tick" -gt 0 && $(( tick % 5 )) -eq 0 ]]; then
+      echo "  Downloaded ${downloaded_mb} MB"
+    fi
+    tick=$((tick + 1))
+    sleep 0.25
+  done
+
+  if wait "$DOWNLOAD_PID"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  DOWNLOAD_PID=""
+  if [[ "$FANCY" -eq 1 ]]; then
+    printf '\r%s%s' "$C_CLEAR" "$SHOW_CUR"
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    cat "$error_file" >&2 2>/dev/null || true
+    return "$rc"
+  fi
+  return 0
 }
 
 die() {
@@ -287,6 +347,28 @@ EOF
   chmod +x "$PREFIX/bin/xtrader"
 }
 
+stop_existing_ports() {
+  local port pids found=0
+  for port in 3456 4000 54329; do
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "$pids" ]]; then
+      # shellcheck disable=SC2086
+      kill -TERM $pids 2>/dev/null || true
+      found=1
+    fi
+  done
+  if [[ "$found" -eq 1 ]]; then
+    sleep 1
+    for port in 3456 4000 54329; do
+      pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+      if [[ -n "$pids" ]]; then
+        # shellcheck disable=SC2086
+        kill -KILL $pids 2>/dev/null || true
+      fi
+    done
+  fi
+}
+
 start_via_nohup() {
   mkdir -p "$PREFIX/var"
   if [[ -f "$PREFIX/var/xtrader.pid" ]]; then
@@ -297,14 +379,8 @@ start_via_nohup() {
       kill -KILL "$old" 2>/dev/null || true
     fi
   fi
-  # Kill anything still bound to desk ports from a failed launchd loop.
-  for port in 3456 4000 54329; do
-    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
-    if [[ -n "$pids" ]]; then
-      # shellcheck disable=SC2086
-      kill -TERM $pids 2>/dev/null || true
-    fi
-  done
+  # Kill anything still bound to desk ports from a failed service start.
+  stop_existing_ports
   sleep 1
   nohup env \
     PATH="$(dirname "$NODE_BIN"):/usr/bin:/bin:/usr/sbin:/sbin" \
@@ -421,6 +497,7 @@ fi
 if command -v systemctl >/dev/null; then
   systemctl --user disable --now xtrader 2>/dev/null || true
 fi
+stop_existing_ports
 
 NODE_DIR="$(dirname "$NODE_BIN")"
 SERVICE_PATH="${NODE_DIR}:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
