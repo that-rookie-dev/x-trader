@@ -65,7 +65,19 @@ cd "$ROOT"
 export NODE_ENV="${NODE_ENV:-production}"
 export DATA_DIR="${DATA_DIR:-$ROOT/var}"
 export XTRADER_HOME="${XTRADER_HOME:-$ROOT}"
-exec node "$ROOT/apps/api/dist/cli.js" "$@"
+NODE_BIN="${NODE_BINARY:-}"
+if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]]; then
+  NODE_BIN="$(command -v node || true)"
+fi
+if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]]; then
+  # Last resort: ask a login shell (helps nvm users who only set PATH interactively)
+  NODE_BIN="$(bash -lc 'command -v node' 2>/dev/null || true)"
+fi
+if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]]; then
+  echo "node not found. Install Node.js 20.11+ or set NODE_BINARY to the absolute path." >&2
+  exit 1
+fi
+exec "$NODE_BIN" "$ROOT/apps/api/dist/cli.js" "$@"
 EOF
 chmod +x "$OUT/bin/xtrader" "$OUT/install.sh" "$OUT/uninstall.sh" "$OUT/scripts/self-update.sh" "$OUT/scripts/uninstall.sh"
 

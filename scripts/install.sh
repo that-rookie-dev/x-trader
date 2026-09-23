@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# xTrader installer — market-floor themed progress (bulls, bears, tape).
-# Attached to GitHub Releases for that-rookie-dev/x-trader.
+# xTrader installer (no Docker). Attached to GitHub Releases for that-rookie-dev/x-trader.
 
 PREFIX="${XTRADER_HOME:-$HOME/.xtrader}"
 REPO="${XTRADER_REPO:-that-rookie-dev/x-trader}"
@@ -12,16 +11,16 @@ STEP=0
 TOTAL_STEPS=6
 SPIN_PID=""
 FANCY=0
+NODE_BIN=""
 
-# ── theme ────────────────────────────────────────────────────────────────────
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
   FANCY=1
   C_RESET=$'\033[0m'
   C_DIM=$'\033[2m'
   C_BOLD=$'\033[1m'
-  C_GREEN=$'\033[38;5;114m'   # bull
-  C_RED=$'\033[38;5;203m'     # bear
-  C_GOLD=$'\033[38;5;220m'    # money / tape
+  C_GREEN=$'\033[38;5;114m'
+  C_RED=$'\033[38;5;203m'
+  C_GOLD=$'\033[38;5;220m'
   C_CYAN=$'\033[38;5;81m'
   C_MUTED=$'\033[38;5;245m'
   C_CLEAR=$'\033[2K'
@@ -41,49 +40,20 @@ trap 'cleanup_ui; exit 130' INT
 trap 'cleanup_ui; exit 143' TERM
 
 banner() {
-  if [[ "$FANCY" -eq 1 ]]; then
-    printf '%s\n' "${C_GOLD}${C_BOLD}"
-    cat <<'ASCII'
-   +======================================================+
-   |                                                      |
-   |     x T r a d e r   ·   O P E N I N G   B E L L      |
-   |                                                      |
-   |   ^ NIFTY  ·  $$$  ·  tape rolling  ·  v BANK        |
-   |                                                      |
-   +======================================================+
-ASCII
-    printf '%s\n' "${C_RESET}${C_MUTED}  personal F&O desk · analysis only · never places orders${C_RESET}"
-    echo
-  else
-    echo "xTrader installer"
-    echo
-  fi
+  echo
+  echo "xTrader install"
+  echo "---------------"
 }
 
 bar() {
   local pct="$1"
-  local width=28
+  local width=24
   local filled=$(( pct * width / 100 ))
   local empty=$(( width - filled ))
   local i out=""
-  for ((i = 0; i < filled; i++)); do out+="█"; done
-  for ((i = 0; i < empty; i++)); do out+="░"; done
+  for ((i = 0; i < filled; i++)); do out+="#"; done
+  for ((i = 0; i < empty; i++)); do out+="-"; done
   printf '%s' "$out"
-}
-
-ticker_frame() {
-  local n="$1"
-  local frames=(
-    "BULLS  ^^^   $$$   tape up   "
-    "BULLS   ^^   $$    tape up   "
-    "BEARS  vvv   $$$   tape down "
-    "BEARS   vv   $$    tape down "
-    "MONEY  $$$   INR   fill...   "
-    "MONEY   $$   $$$   fill...   "
-    "CANDLE ^|v   OHLC  print     "
-    "CANDLE |v^   OHLC  print     "
-  )
-  printf '%s' "${frames[$((n % ${#frames[@]}))]}"
 }
 
 stop_spin() {
@@ -93,29 +63,28 @@ stop_spin() {
   fi
   SPIN_PID=""
   if [[ "$FANCY" -eq 1 ]]; then
-    printf '\r%s%s\n' "$C_CLEAR" "$C_RESET"
+    printf '\r%s%s' "$C_CLEAR" "$C_RESET"
   fi
 }
 
 start_spin() {
   local label="$1"
   stop_spin
-  [[ "$FANCY" -eq 1 ]] || { echo "… $label"; return; }
+  if [[ "$FANCY" -ne 1 ]]; then
+    echo "  ... $label"
+    return
+  fi
   printf '%s' "$HIDE_CUR"
   (
     local i=0
+    local frames=('|' '/' '-' '\')
     while true; do
       local pct=$(( STEP * 100 / TOTAL_STEPS ))
-      # nudge within the current step
-      local jitter=$(( (i % 7) * 2 ))
-      local show=$(( pct + jitter ))
-      [[ "$show" -gt 99 ]] && show=99
-      printf '\r%s%s[%s%s%s] %3d%%  %s%s%s  %s%s' \
-        "$C_CLEAR" "$C_MUTED" "$C_GREEN" "$(bar "$show")" "$C_MUTED" "$show" \
-        "$C_GOLD" "$(ticker_frame "$i")" "$C_RESET" \
-        "$C_CYAN${C_DIM}${label}${C_RESET}"
+      local frame="${frames[$((i % 4))]}"
+      printf '\r%s  [%s] %3d%%  %s %s' \
+        "$C_CLEAR" "$(bar "$pct")" "$pct" "$frame" "$label"
       i=$((i + 1))
-      sleep 0.12
+      sleep 0.15
     done
   ) &
   SPIN_PID=$!
@@ -123,22 +92,13 @@ start_spin() {
 
 finish_step() {
   local label="$1"
-  local tone="${2:-bull}" # bull | bear | gold
   stop_spin
   STEP=$((STEP + 1))
   local pct=$(( STEP * 100 / TOTAL_STEPS ))
-  local tag color
-  case "$tone" in
-    bear) tag="[BEAR]"; color="$C_RED" ;;
-    gold) tag="[$$$$]"; color="$C_GOLD" ;;
-    *)    tag="[BULL]"; color="$C_GREEN" ;;
-  esac
   if [[ "$FANCY" -eq 1 ]]; then
-    printf '%s[%s%s%s] %3d%%  %s %s%s%s\n' \
-      "$C_MUTED" "$C_GREEN" "$(bar "$pct")" "$C_MUTED" "$pct" \
-      "$tag" "$color" "$label" "$C_RESET"
+    printf '  [%s] %3d%%  %s\n' "$(bar "$pct")" "$pct" "$label"
   else
-    echo "[$STEP/$TOTAL_STEPS] $label"
+    echo "  [$STEP/$TOTAL_STEPS] $label"
   fi
 }
 
@@ -147,12 +107,12 @@ die() {
   printf '%s\n' "${C_RED}${C_BOLD}ERROR: $1${C_RESET}" >&2
   shift || true
   for line in "$@"; do
-    printf '%s\n' "${C_MUTED}  $line${C_RESET}" >&2
+    printf '%s\n' "  $line" >&2
   done
   exit 1
 }
 
-need_node() {
+resolve_node() {
   if ! command -v node >/dev/null; then
     die "Node.js 20.11+ is required (node not found on PATH)."
   fi
@@ -161,9 +121,78 @@ need_node() {
   if [[ "$major" -lt 20 ]]; then
     die "Node.js 20.11+ is required (found $(node -v))."
   fi
+  # Absolute path so launchd / nohup work even when nvm is not in the service PATH.
+  NODE_BIN="$(node -p 'process.execPath')"
+  if [[ ! -x "$NODE_BIN" ]]; then
+    die "Could not resolve Node binary path."
+  fi
 }
 
-# ── detect platform ──────────────────────────────────────────────────────────
+write_launcher() {
+  mkdir -p "$PREFIX/bin"
+  cat >"$PREFIX/bin/xtrader" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="\$(cd "\$(dirname "\$0")/.." && pwd)"
+cd "\$ROOT"
+export NODE_ENV="\${NODE_ENV:-production}"
+export DATA_DIR="\${DATA_DIR:-\$ROOT/var}"
+export XTRADER_HOME="\${XTRADER_HOME:-\$ROOT}"
+NODE_BIN="\${NODE_BINARY:-$NODE_BIN}"
+if [[ ! -x "\$NODE_BIN" ]]; then
+  NODE_BIN="\$(command -v node || true)"
+fi
+if [[ -z "\$NODE_BIN" || ! -x "\$NODE_BIN" ]]; then
+  echo "node not found. Install Node.js 20.11+ or set NODE_BINARY." >&2
+  exit 1
+fi
+exec "\$NODE_BIN" "\$ROOT/apps/api/dist/cli.js" "\$@"
+EOF
+  chmod +x "$PREFIX/bin/xtrader"
+}
+
+start_via_nohup() {
+  mkdir -p "$PREFIX/var"
+  if [[ -f "$PREFIX/var/xtrader.pid" ]]; then
+    old="$(cat "$PREFIX/var/xtrader.pid" 2>/dev/null || true)"
+    if [[ -n "${old:-}" ]]; then
+      kill -TERM "$old" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$old" 2>/dev/null || true
+    fi
+  fi
+  # Kill anything still bound to desk ports from a failed launchd loop.
+  for port in 3456 4000 54329; do
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "$pids" ]]; then
+      # shellcheck disable=SC2086
+      kill -TERM $pids 2>/dev/null || true
+    fi
+  done
+  sleep 1
+  nohup env \
+    PATH="$(dirname "$NODE_BIN"):/usr/bin:/bin:/usr/sbin:/sbin" \
+    NODE_BINARY="$NODE_BIN" \
+    XTRADER_HOME="$PREFIX" \
+    DATA_DIR="$PREFIX/var" \
+    "$PREFIX/bin/xtrader" start \
+    >"$PREFIX/var/xtrader.log" 2>&1 &
+  echo $! >"$PREFIX/var/xtrader.pid"
+}
+
+wait_healthy() {
+  local seconds="$1"
+  local i
+  for ((i = 1; i <= seconds; i++)); do
+    if curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:4000/api/health" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+# ── begin ────────────────────────────────────────────────────────────────────
 banner
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m)"
@@ -177,13 +206,15 @@ case "$os" in
   *) die "Unsupported platform $os/$arch" "Need linux or macOS (x64 / arm64)." ;;
 esac
 
-printf '%s\n' "${C_MUTED}  floor → ${C_BOLD}${PREFIX}${C_RESET}${C_MUTED}  ·  contract ${C_GOLD}${platform}${C_RESET}${C_MUTED}  ·  session ${C_CYAN}${VERSION}${C_RESET}"
+echo "  Install dir : $PREFIX"
+echo "  Platform    : $platform"
+echo "  Version     : $VERSION"
 echo
 
-start_spin "checking Node.js + curl…"
-need_node
+start_spin "Checking Node.js and curl"
+resolve_node
 command -v curl >/dev/null || die "curl is required"
-finish_step "Pre-market checks cleared (Node $(node -v | tr -d v | cut -d. -f1)+)"
+finish_step "Ready (Node $(node -v), $(basename "$NODE_BIN"))"
 
 mkdir -p "$PREFIX"
 
@@ -195,24 +226,17 @@ fi
 
 tmp="$(mktemp -d)"
 
-# ── download with live progress ──────────────────────────────────────────────
-start_spin "calling the exchange… downloading release"
-if [[ "$FANCY" -eq 1 ]]; then
-  # curl writes quietly while our ticker animates
-  if ! curl -fL --retry 2 --connect-timeout 20 -o "$tmp/xtrader.tgz" "$url" 2>"$tmp/curl.err"; then
-    stop_spin
-    die "Release asset not on the tape yet" "$url" "Build from source or set XTRADER_VERSION to a published tag."
-  fi
-else
-  if ! curl -fL --progress-bar --retry 2 -o "$tmp/xtrader.tgz" "$url"; then
-    die "Release asset not published yet at $url"
-  fi
+start_spin "Downloading release ($platform)"
+# Always quiet + our own spinner (avoid curl's #=#=# meter)
+if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
+  -o "$tmp/xtrader.tgz" "$url" 2>"$tmp/curl.err"; then
+  err="$(tr '\n' ' ' <"$tmp/curl.err" 2>/dev/null || true)"
+  die "Download failed" "$url" "${err:-check network / release assets}"
 fi
 size="$(du -h "$tmp/xtrader.tgz" 2>/dev/null | awk '{print $1}')"
-finish_step "Filled the book — downloaded ${size:-bundle}" "gold"
+finish_step "Downloaded ${size:-bundle}"
 
-# ── unpack ───────────────────────────────────────────────────────────────────
-start_spin "unpacking lots… clearing old positions"
+start_spin "Extracting files"
 mkdir -p "$PREFIX/var"
 if [[ -f "$PREFIX/.env" ]]; then
   cp "$PREFIX/.env" "$tmp/dotenv.bak"
@@ -223,12 +247,12 @@ if [[ -f "$tmp/dotenv.bak" ]]; then
   mv "$tmp/dotenv.bak" "$PREFIX/.env"
 fi
 mkdir -p "$PREFIX/bin" "$PREFIX/var"
-chmod +x "$PREFIX/bin/xtrader" "$PREFIX/install.sh" 2>/dev/null || true
+chmod +x "$PREFIX/install.sh" 2>/dev/null || true
 chmod +x "$PREFIX/scripts/"*.sh 2>/dev/null || true
-finish_step "Positions rolled — files on disk"
+write_launcher
+finish_step "Files installed"
 
-# ── secrets ──────────────────────────────────────────────────────────────────
-start_spin "minting session vault keys…"
+start_spin "Writing config"
 if [[ ! -f "$PREFIX/.env" ]]; then
   cat > "$PREFIX/.env" <<'EOF'
 NODE_ENV=production
@@ -245,30 +269,24 @@ UPDATE_REPO=that-rookie-dev/x-trader
 EOF
   echo "SESSION_SECRET=$(openssl rand -base64 48)" >> "$PREFIX/.env"
   echo "TOKEN_ENCRYPTION_KEY_BASE64=$(openssl rand -base64 32)" >> "$PREFIX/.env"
-  finish_step "Vault minted — Kite keys go in the first-run UI" "gold"
+  finish_step "Created .env (enter Kite keys in the UI)"
 else
-  finish_step "Existing vault kept (.env preserved)" "gold"
+  finish_step "Kept existing .env"
 fi
 
-# ── service / start ──────────────────────────────────────────────────────────
-start_spin "ringing the opening bell…"
-started=0
-start_via_nohup() {
-  mkdir -p "$PREFIX/var"
-  # stop a previous background pid if present
-  if [[ -f "$PREFIX/var/xtrader.pid" ]]; then
-    old="$(cat "$PREFIX/var/xtrader.pid" 2>/dev/null || true)"
-    if [[ -n "${old:-}" ]]; then
-      kill -TERM "$old" 2>/dev/null || true
-      sleep 1
-      kill -KILL "$old" 2>/dev/null || true
-    fi
-  fi
-  nohup env XTRADER_HOME="$PREFIX" DATA_DIR="$PREFIX/var" "$PREFIX/bin/xtrader" start \
-    >"$PREFIX/var/xtrader.log" 2>&1 &
-  echo $! >"$PREFIX/var/xtrader.pid"
-  started=1
-}
+start_spin "Starting xTrader"
+# Stop any previous agent first
+if [[ "$os" == "darwin" ]]; then
+  uid="$(id -u)"
+  launchctl bootout "gui/${uid}/com.xtrader.app" 2>/dev/null || true
+fi
+if command -v systemctl >/dev/null; then
+  systemctl --user disable --now xtrader 2>/dev/null || true
+fi
+
+NODE_DIR="$(dirname "$NODE_BIN")"
+SERVICE_PATH="${NODE_DIR}:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+started_via=""
 
 if [[ "$os" == "linux" ]] && command -v systemctl >/dev/null; then
   mkdir -p "$HOME/.config/systemd/user"
@@ -282,6 +300,8 @@ WorkingDirectory=$PREFIX
 EnvironmentFile=$PREFIX/.env
 Environment=DATA_DIR=$PREFIX/var
 Environment=XTRADER_HOME=$PREFIX
+Environment=NODE_BINARY=$NODE_BIN
+Environment=PATH=$SERVICE_PATH
 ExecStart=$PREFIX/bin/xtrader start
 Restart=on-failure
 [Install]
@@ -289,7 +309,7 @@ WantedBy=default.target
 EOF
   systemctl --user daemon-reload || true
   if systemctl --user enable --now xtrader 2>/dev/null; then
-    started=1
+    started_via="systemd"
   fi
 elif [[ "$os" == "darwin" ]]; then
   plist="$HOME/Library/LaunchAgents/com.xtrader.app.plist"
@@ -303,6 +323,8 @@ elif [[ "$os" == "darwin" ]]; then
   <key>EnvironmentVariables</key><dict>
     <key>DATA_DIR</key><string>$PREFIX/var</string>
     <key>XTRADER_HOME</key><string>$PREFIX</string>
+    <key>NODE_BINARY</key><string>$NODE_BIN</string>
+    <key>PATH</key><string>$SERVICE_PATH</string>
   </dict>
   <key>ProgramArguments</key><array>
     <string>$PREFIX/bin/xtrader</string>
@@ -317,80 +339,66 @@ EOF
   uid="$(id -u)"
   launchctl bootout "gui/${uid}/com.xtrader.app" 2>/dev/null || true
   if launchctl bootstrap "gui/${uid}" "$plist" 2>/dev/null || launchctl load -w "$plist" 2>/dev/null; then
-    started=1
     launchctl kickstart -k "gui/${uid}/com.xtrader.app" 2>/dev/null || true
+    started_via="launchd"
   fi
 fi
 
-# Always ensure a running process — service helpers sometimes no-op in restricted shells.
-if [[ "$started" -eq 0 ]]; then
+# If service manager did not take it, start in the background with an absolute Node path.
+if [[ -z "$started_via" ]]; then
   start_via_nohup
+  started_via="background"
 fi
-finish_step "Opening bell — desk process started" "bull"
+finish_step "Process started ($started_via)"
 
-# ── warm-up poll ─────────────────────────────────────────────────────────────
-start_spin "waiting for first print on :3456…"
+start_spin "Waiting for http://127.0.0.1:4000/api/health"
 warm=0
-for _ in $(seq 1 45); do
-  if curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:3456/" 2>/dev/null \
-    || curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:4000/api/health" 2>/dev/null; then
-    warm=1
-    break
-  fi
-  sleep 1
-done
+if wait_healthy 45; then
+  warm=1
+fi
 
-# If launchd/systemd claimed start but nothing answers, fall back to nohup.
+# Service may have failed (e.g. old plist). Fall back to background start once.
 if [[ "$warm" -eq 0 ]]; then
+  if [[ "$os" == "darwin" ]]; then
+    launchctl bootout "gui/$(id -u)/com.xtrader.app" 2>/dev/null || true
+  fi
+  if command -v systemctl >/dev/null; then
+    systemctl --user stop xtrader 2>/dev/null || true
+  fi
   start_via_nohup
-  for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:3456/" 2>/dev/null \
-      || curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:4000/api/health" 2>/dev/null; then
-      warm=1
-      break
-    fi
-    sleep 1
-  done
+  started_via="background"
+  if wait_healthy 45; then
+    warm=1
+  fi
 fi
 
 if [[ "$warm" -eq 1 ]]; then
-  finish_step "Market open — UI responding" "bull"
-  # Auto-open the desk in the default browser
+  finish_step "Server is up"
   if command -v open >/dev/null; then
     open "http://localhost:3456" >/dev/null 2>&1 || true
   elif command -v xdg-open >/dev/null; then
     xdg-open "http://localhost:3456" >/dev/null 2>&1 || true
   fi
 else
-  finish_step "Desk still booting — open http://localhost:3456 shortly" "bear"
+  finish_step "Install finished (server still starting)"
+  echo "  Check logs: $PREFIX/var/xtrader.log"
+  if [[ -f "$PREFIX/var/launchd.err.log" ]]; then
+    echo "  launchd:  $PREFIX/var/launchd.err.log"
+  fi
 fi
 
-# Keep a local uninstall helper next to the install
 if [[ -f "$PREFIX/scripts/uninstall.sh" ]]; then
   ln -sf "$PREFIX/scripts/uninstall.sh" "$PREFIX/uninstall.sh" 2>/dev/null || cp "$PREFIX/scripts/uninstall.sh" "$PREFIX/uninstall.sh"
   chmod +x "$PREFIX/uninstall.sh" "$PREFIX/scripts/uninstall.sh" 2>/dev/null || true
 fi
 
-# ── closing print ────────────────────────────────────────────────────────────
 echo
-if [[ "$FANCY" -eq 1 ]]; then
-  cat <<EOF
-${C_GREEN}${C_BOLD}   ^ SETTLE  ·  INSTALL COMPLETE  ·  100%${C_RESET}
-${C_MUTED}   ----------------------------------------${C_RESET}
-${C_GOLD}   Open     ${C_BOLD}${C_CYAN}http://localhost:3456${C_RESET}
-${C_MUTED}   Home     ${PREFIX}${C_RESET}
-${C_MUTED}   CLI      ${PREFIX}/bin/xtrader start | update | session reset${C_RESET}
-${C_MUTED}   Remove   ${PREFIX}/uninstall.sh   (or curl uninstall.sh | bash)${C_RESET}
-
-${C_DIM}   First tick: paste Kite API key + secret in the UI.
-   Redirect URL in Kite Connect:
-   http://localhost:3456/zerodha/callback${C_RESET}
-EOF
-else
-  echo "xTrader is installed in $PREFIX"
-  echo "Open http://localhost:3456"
-  echo "On first load, enter your Zerodha Kite API key and secret."
-  echo "In the Kite app, set redirect URL to: http://localhost:3456/zerodha/callback"
-  echo "CLI: $PREFIX/bin/xtrader start | update | session reset"
-  echo "Uninstall: $PREFIX/uninstall.sh"
-fi
+echo "Done."
+echo "  Open     http://localhost:3456"
+echo "  Home     $PREFIX"
+echo "  CLI      $PREFIX/bin/xtrader start | update | session reset"
+echo "  Remove   $PREFIX/uninstall.sh"
+echo
+echo "  First run: paste Kite API key + secret in the UI."
+echo "  Kite redirect URL: http://localhost:3456/zerodha/callback"
+echo
