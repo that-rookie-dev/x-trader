@@ -58,7 +58,7 @@ Wipes the install directory (app binaries, Postgres data, paper wallet, encrypte
 curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
 ```
 
-Or run `~/.xtrader/uninstall.sh`. Non-interactive: `XTRADER_UNINSTALL_YES=1 bash uninstall.sh`.
+Or run `~/.xtrader/uninstall.sh`. The script asks you to type `uninstall` to confirm (works with `curl | bash` via the terminal).
 ## Recover a session
 
 Click **Reconnect Zerodha** in the UI. Only the same linked client is accepted. To wipe cookies and expire broker sessions on the server:

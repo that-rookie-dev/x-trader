@@ -35,7 +35,6 @@ Removes the app, launch agent/systemd unit, and **all local data** (`~/.xtrader`
 ```bash
 curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
 # or: ~/.xtrader/uninstall.sh
-# non-interactive: XTRADER_UNINSTALL_YES=1 bash uninstall.sh
 ```
 ## Run from source
 

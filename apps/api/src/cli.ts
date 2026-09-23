@@ -60,7 +60,7 @@ async function run() {
     }
     const child = spawn("bash", [script], {
       stdio: "inherit",
-      env: { ...process.env, XTRADER_HOME: root, XTRADER_UNINSTALL_YES: sub === "--yes" || sub === "-y" ? "1" : process.env.XTRADER_UNINSTALL_YES },
+      env: { ...process.env, XTRADER_HOME: root },
     });
     const code = await new Promise<number>((resolveCode) => child.on("exit", (c) => resolveCode(c ?? 1)));
     process.exit(code);

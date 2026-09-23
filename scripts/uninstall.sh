@@ -4,10 +4,9 @@ set -euo pipefail
 # xTrader uninstall — stops services and deletes the install + all local data.
 # Usage:
 #   curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
-#   XTRADER_UNINSTALL_YES=1 bash uninstall.sh   # non-interactive
+#   ~/.xtrader/uninstall.sh
 
 PREFIX="${XTRADER_HOME:-$HOME/.xtrader}"
-YES="${XTRADER_UNINSTALL_YES:-0}"
 
 FANCY=0
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
@@ -54,6 +53,36 @@ kill_port() {
   fi
 }
 
+confirm() {
+  # Prefer the real terminal so `curl | bash` can still prompt.
+  local tty=""
+  if [[ -r /dev/tty ]]; then
+    tty="/dev/tty"
+  elif [[ -t 0 ]]; then
+    tty=""
+  else
+    echo "No terminal available to confirm uninstall." >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${C_RED}${C_BOLD}This deletes the app AND all data under:${C_RESET}"
+  echo "  $PREFIX"
+  echo "  (Postgres, predictions, paper wallet, logs, .env / Kite vault)"
+  echo
+  if [[ -n "$tty" ]]; then
+    printf '%s' "Type ${C_BOLD}uninstall${C_RESET} to confirm: " >"$tty"
+    # shellcheck disable=SC2162
+    read -r answer <"$tty" || true
+  else
+    printf '%s' "Type ${C_BOLD}uninstall${C_RESET} to confirm: "
+    read -r answer || true
+  fi
+  if [[ "$answer" != "uninstall" ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+}
+
 banner
 printf '%s\n' "${C_MUTED}  Target: ${C_BOLD}${PREFIX}${C_RESET}"
 echo
@@ -65,24 +94,7 @@ if [[ ! -d "$PREFIX" ]] \
   exit 0
 fi
 
-if [[ "$YES" != "1" ]]; then
-  if [[ -t 0 ]]; then
-    printf '%s' "${C_RED}${C_BOLD}This deletes the app AND all data under:${C_RESET}"
-    echo
-    echo "  $PREFIX"
-    echo "  (Postgres, predictions, paper wallet, logs, .env / Kite vault)"
-    echo
-    printf '%s' "Type ${C_BOLD}uninstall${C_RESET} to confirm: "
-    read -r answer
-    if [[ "$answer" != "uninstall" ]]; then
-      echo "Aborted."
-      exit 1
-    fi
-  else
-    echo "Non-interactive shell — set XTRADER_UNINSTALL_YES=1 to confirm wipe." >&2
-    exit 1
-  fi
-fi
+confirm
 
 echo "${C_MUTED}Stopping desk…${C_RESET}"
 
