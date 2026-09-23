@@ -12,6 +12,9 @@ TOTAL_STEPS=6
 SPIN_PID=""
 FANCY=0
 NODE_BIN=""
+NODE_SOURCE="" # system | portable | brew
+# Official Node LTS used when the machine has no Node 20+.
+NODE_DIST_VERSION="${XTRADER_NODE_VERSION:-22.14.0}"
 
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
   FANCY=1
@@ -112,20 +115,136 @@ die() {
   exit 1
 }
 
-resolve_node() {
-  if ! command -v node >/dev/null; then
-    die "Node.js 20.11+ is required (node not found on PATH)."
+print_node_instructions() {
+  stop_spin
+  echo
+  echo "Node.js 20.11+ is required and could not be installed automatically."
+  echo
+  echo "Install Node, then re-run this installer:"
+  echo
+  case "$os" in
+    darwin)
+      echo "  macOS (Homebrew):"
+      echo "    brew install node"
+      echo
+      echo "  Or download the macOS installer:"
+      echo "    https://nodejs.org/en/download"
+      ;;
+    linux)
+      echo "  Ubuntu / Debian:"
+      echo "    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
+      echo "    sudo apt-get install -y nodejs"
+      echo
+      echo "  Fedora:"
+      echo "    sudo dnf install nodejs"
+      echo
+      echo "  Or download a Linux binary from:"
+      echo "    https://nodejs.org/en/download"
+      ;;
+    *)
+      echo "  Download Node.js 20+ from https://nodejs.org/en/download"
+      ;;
+  esac
+  echo
+  echo "  Or use nvm:"
+  echo "    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash"
+  echo "    # restart the terminal, then:"
+  echo "    nvm install 22"
+  echo
+  echo "Verify, then install xTrader again:"
+  echo "  node -v"
+  echo "  curl -fsSL https://github.com/${REPO}/releases/latest/download/install.sh | bash"
+  echo
+  exit 1
+}
+
+# Returns 0 and sets NODE_BIN if a usable Node 20+ is found.
+try_existing_node() {
+  local candidate=""
+  if command -v node >/dev/null 2>&1; then
+    candidate="$(command -v node)"
+  elif [[ -x "$PREFIX/runtime/node/bin/node" ]]; then
+    candidate="$PREFIX/runtime/node/bin/node"
   fi
+  [[ -n "$candidate" && -x "$candidate" ]] || return 1
+
   local major
-  major="$(node -p "process.versions.node.split('.')[0]")"
+  major="$("$candidate" -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)"
   if [[ "$major" -lt 20 ]]; then
-    die "Node.js 20.11+ is required (found $(node -v))."
+    return 1
   fi
-  # Absolute path so launchd / nohup work even when nvm is not in the service PATH.
-  NODE_BIN="$(node -p 'process.execPath')"
+  NODE_BIN="$("$candidate" -p 'process.execPath' 2>/dev/null || echo "$candidate")"
+  [[ -x "$NODE_BIN" ]] || return 1
+  return 0
+}
+
+# Download official Node binaries into $PREFIX/runtime/node (no sudo).
+install_portable_node() {
+  local dist="node-v${NODE_DIST_VERSION}-${platform}"
+  local url="https://nodejs.org/dist/v${NODE_DIST_VERSION}/${dist}.tar.gz"
+  local tgz="$tmp/node.tgz"
+
+  start_spin "Downloading Node.js v${NODE_DIST_VERSION}"
+  if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
+    -o "$tgz" "$url" 2>"$tmp/node-curl.err"; then
+    return 1
+  fi
+
+  start_spin "Installing Node.js into $PREFIX/runtime"
+  rm -rf "$PREFIX/runtime/node" "$PREFIX/runtime/$dist"
+  mkdir -p "$PREFIX/runtime"
+  if ! tar -xzf "$tgz" -C "$PREFIX/runtime" 2>/dev/null; then
+    return 1
+  fi
+  mv "$PREFIX/runtime/$dist" "$PREFIX/runtime/node"
+  NODE_BIN="$PREFIX/runtime/node/bin/node"
   if [[ ! -x "$NODE_BIN" ]]; then
-    die "Could not resolve Node binary path."
+    return 1
   fi
+  NODE_SOURCE="portable"
+  return 0
+}
+
+# Optional: Homebrew when available (macOS / Linuxbrew).
+try_brew_node() {
+  command -v brew >/dev/null 2>&1 || return 1
+  start_spin "Installing Node.js with Homebrew"
+  if ! brew install node >/dev/null 2>"$tmp/brew-node.err"; then
+    return 1
+  fi
+  hash -r 2>/dev/null || true
+  try_existing_node || return 1
+  NODE_SOURCE="brew"
+  return 0
+}
+
+ensure_node() {
+  if try_existing_node; then
+    if [[ -z "$NODE_SOURCE" ]]; then
+      if [[ "$NODE_BIN" == "$PREFIX/runtime/node/bin/node" ]]; then
+        NODE_SOURCE="portable"
+      else
+        NODE_SOURCE="system"
+      fi
+    fi
+    return 0
+  fi
+
+  echo "  Node.js 20+ not found on PATH."
+  echo "  Installing Node v${NODE_DIST_VERSION} into $PREFIX/runtime (no admin password)…"
+  if install_portable_node; then
+    return 0
+  fi
+
+  echo "  Download from nodejs.org failed."
+  if command -v brew >/dev/null 2>&1; then
+    echo "  Trying Homebrew…"
+    if try_brew_node; then
+      return 0
+    fi
+  fi
+
+  print_node_instructions
 }
 
 write_launcher() {
@@ -140,10 +259,13 @@ export DATA_DIR="\${DATA_DIR:-\$ROOT/var}"
 export XTRADER_HOME="\${XTRADER_HOME:-\$ROOT}"
 NODE_BIN="\${NODE_BINARY:-$NODE_BIN}"
 if [[ ! -x "\$NODE_BIN" ]]; then
+  NODE_BIN="\$ROOT/runtime/node/bin/node"
+fi
+if [[ ! -x "\$NODE_BIN" ]]; then
   NODE_BIN="\$(command -v node || true)"
 fi
 if [[ -z "\$NODE_BIN" || ! -x "\$NODE_BIN" ]]; then
-  echo "node not found. Install Node.js 20.11+ or set NODE_BINARY." >&2
+  echo "node not found. Re-run the installer or install Node.js 20.11+." >&2
   exit 1
 fi
 exec "\$NODE_BIN" "\$ROOT/apps/api/dist/cli.js" "\$@"
@@ -211,12 +333,13 @@ echo "  Platform    : $platform"
 echo "  Version     : $VERSION"
 echo
 
-start_spin "Checking Node.js and curl"
-resolve_node
 command -v curl >/dev/null || die "curl is required"
-finish_step "Ready (Node $(node -v), $(basename "$NODE_BIN"))"
 
 mkdir -p "$PREFIX"
+tmp="$(mktemp -d)"
+
+# Prefer a system Node when present; otherwise install after unpack.
+try_existing_node && NODE_SOURCE="${NODE_SOURCE:-system}"
 
 if [[ "$VERSION" == "latest" ]]; then
   url="https://github.com/${REPO}/releases/latest/download/xtrader-${platform}.tar.gz"
@@ -224,10 +347,7 @@ else
   url="https://github.com/${REPO}/releases/download/${VERSION}/xtrader-${platform}.tar.gz"
 fi
 
-tmp="$(mktemp -d)"
-
 start_spin "Downloading release ($platform)"
-# Always quiet + our own spinner (avoid curl's #=#=# meter)
 if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
   -o "$tmp/xtrader.tgz" "$url" 2>"$tmp/curl.err"; then
   err="$(tr '\n' ' ' <"$tmp/curl.err" 2>/dev/null || true)"
@@ -241,7 +361,8 @@ mkdir -p "$PREFIX/var"
 if [[ -f "$PREFIX/.env" ]]; then
   cp "$PREFIX/.env" "$tmp/dotenv.bak"
 fi
-find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name var ! -name .env -exec rm -rf {} +
+# Keep var/, .env, and any previously installed portable Node runtime.
+find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name var ! -name .env ! -name runtime -exec rm -rf {} +
 tar -xzf "$tmp/xtrader.tgz" -C "$PREFIX"
 if [[ -f "$tmp/dotenv.bak" ]]; then
   mv "$tmp/dotenv.bak" "$PREFIX/.env"
@@ -249,8 +370,13 @@ fi
 mkdir -p "$PREFIX/bin" "$PREFIX/var"
 chmod +x "$PREFIX/install.sh" 2>/dev/null || true
 chmod +x "$PREFIX/scripts/"*.sh 2>/dev/null || true
-write_launcher
 finish_step "Files installed"
+
+start_spin "Checking Node.js"
+ensure_node
+finish_step "Node ready ($("$NODE_BIN" -v), via $NODE_SOURCE)"
+
+write_launcher
 
 start_spin "Writing config"
 if [[ ! -f "$PREFIX/.env" ]]; then

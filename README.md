@@ -4,7 +4,7 @@ Personal analysis / forecast desk for Indian F&O and stocks. **Never places orde
 
 ## Install (recommended)
 
-Requires **Node.js 20.11+**. No Docker — PostgreSQL is bundled.
+Requires **Node.js 20.11+** (the installer downloads a local copy automatically if Node is missing). No Docker — PostgreSQL is bundled.
 
 ```bash
 curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash

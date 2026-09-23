@@ -1,6 +1,8 @@
 # Install (no Docker)
 
-xTrader ships a built Node app and PostgreSQL binaries inside a GitHub Release. Nothing is installed via Docker. **Node.js 20.11+** must already be on your PATH.
+xTrader ships a built Node app and PostgreSQL binaries inside a GitHub Release. Nothing is installed via Docker.
+
+If **Node.js 20.11+** is not on your PATH, the installer downloads an official Node binary into `~/.xtrader/runtime` (no sudo). If that fails, it prints short install instructions and exits.
 
 ## From a release
 
