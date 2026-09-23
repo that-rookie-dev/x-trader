@@ -37,7 +37,7 @@ type Bootstrap = {
   locked?: boolean;
   needsReconnect?: boolean;
   broker: { status: string; clientId?: string };
-  settings: { executionMode: string; haltActive: boolean; liveReady: boolean; agentMode?: string };
+  settings: { deskMode?: string; ordersEnabled?: boolean; haltActive: boolean };
 };
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -125,8 +125,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     window.location.reload();
   }
 
-  const mode = boot?.settings.executionMode === "LIVE" ? "LIVE" : "TEST";
-
   return (
     <div className="shell">
       <aside className="side">
@@ -146,10 +144,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="main">
         <header className="top">
-          <span className={`badge ${mode === "LIVE" ? "live" : "paper"}`}>{mode}</span>
-          <span className={`badge ${boot?.settings.agentMode === "AUTO" ? "live" : "ok"}`}>
-            {boot?.settings.agentMode ?? "COPILOT"}
-          </span>
+          <span className="badge ok">DESK</span>
+          <span className="badge warn">READ-ONLY</span>
           <span className={`badge ${boot?.broker.status === "CONNECTED" ? "ok" : "warn"}`}>
             {compactStatus(boot?.broker.status)}
           </span>

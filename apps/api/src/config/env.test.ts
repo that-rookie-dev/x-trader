@@ -15,13 +15,14 @@ describe("parseEnv", () => {
 
   it("accepts empty kite keys (login will fail later)", () => {
     const env = parseEnv(base);
-    expect(env.EXECUTION_MODE).toBe("PAPER");
-    expect(env.LIVE_TRADING_ENABLED).toBe(false);
-    expect(env.AGENT_MODE).toBe("COPILOT");
+    expect(env.API_PORT).toBe(4000);
+    expect(env.MARKET_TIMEZONE).toBe("Asia/Kolkata");
   });
 
-  it("maps legacy AGENT_MODE values", () => {
-    expect(parseEnv({ ...base, AGENT_MODE: "AUTONOMOUS" }).AGENT_MODE).toBe("AUTO");
-    expect(parseEnv({ ...base, AGENT_MODE: "MANUAL" }).AGENT_MODE).toBe("COPILOT");
+  it("ignores legacy AGENT_MODE / EXECUTION_MODE without failing", () => {
+    const env = parseEnv({ ...base, AGENT_MODE: "AUTO", EXECUTION_MODE: "LIVE", LIVE_TRADING_ENABLED: "true" });
+    expect(env.AGENT_MODE).toBe("AUTO");
+    expect(env.EXECUTION_MODE).toBe("LIVE");
+    expect(env.LIVE_TRADING_ENABLED).toBe(true);
   });
 });

@@ -5,13 +5,11 @@ import { api } from "@/lib/api";
 import { useEffect, useState } from "react";
 
 type Settings = {
-  executionMode: string;
-  agentMode: string;
-  liveTradingEnabled: boolean;
-  currentEgressIp: string | null;
-  confirmedEgressIp: string | null;
-  liveReady: boolean;
-  liveBlockedReason: string | null;
+  deskMode: string;
+  ordersEnabled: boolean;
+  haltActive: boolean;
+  haltPolicy: string;
+  haltReason: string | null;
 };
 
 export default function SettingsPage() {
@@ -40,50 +38,27 @@ export default function SettingsPage() {
         <div>
           <p className="eyebrow">Control plane</p>
           <h1>Settings</h1>
-          <p className="lede">Live-test a model before you activate it. Copilot never places an order.</p>
+          <p className="lede">Analysis desk only. Connect Zerodha for data; place every order in the Zerodha app.</p>
         </div>
       </div>
       {msg ? <div className="card down">{msg}</div> : null}
       <div className="card">
-        <h2>TEST / LIVE</h2>
+        <h2>Desk</h2>
         <p>
-          Mode:{" "}
-          <span className={`badge ${settings?.executionMode === "LIVE" ? "live" : "paper"}`}>
-            {settings?.executionMode ?? "PAPER"}
-          </span>
+          Mode: <span className="badge ok">{settings?.deskMode ?? "ANALYSIS"}</span>
         </p>
-        <p className="muted">Current egress IP: {settings?.currentEgressIp ?? "unknown"}</p>
-        <p className="muted">Confirmed static IP: {settings?.confirmedEgressIp ?? "none"}</p>
-        <p className="muted">{settings?.liveBlockedReason}</p>
+        <p className="muted">Orders from this app: never. Halt pauses alert scanning.</p>
         <div className="row">
-          <button className="btn" onClick={() => void save({ confirmEgress: true })}>
-            Confirm current IP as static
-          </button>
-          <button className="btn" onClick={() => void save({ liveTradingEnabled: true })}>
-            Enable live capability
-          </button>
-          <button className="btn" onClick={() => void save({ executionMode: "PAPER" })}>
-            TEST
-          </button>
-          <button className="btn danger" onClick={() => void save({ executionMode: "LIVE" })}>
-            LIVE
-          </button>
-        </div>
-      </div>
-      <div className="card">
-        <h2>Copilot / Auto</h2>
-        <p className="muted">
-          Copilot studies history, news, and F&amp;O and never places an order. Auto uses the same study, then
-          risk-gated execution for names you enable on Forecast.
-        </p>
-        <div className="row">
-          {(["COPILOT", "AUTO"] as const).map((m) => (
-            <button key={m} className={`btn ${settings?.agentMode === m ? "primary" : ""}`} onClick={() => void save({ agentMode: m })}>
-              {m}
+          {settings?.haltActive ? (
+            <button className="btn" onClick={() => void save({ haltActive: false, haltReason: null })}>
+              Resume desk
             </button>
-          ))}
+          ) : (
+            <button className="btn danger" onClick={() => void save({ haltActive: true, haltReason: "user" })}>
+              Pause desk
+            </button>
+          )}
         </div>
-        <p className="muted">LIVE Auto still requires the IP gate. Development stays on TEST/paper unless you switch LIVE.</p>
       </div>
       <AiProvidersPanel />
     </>

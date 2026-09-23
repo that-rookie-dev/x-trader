@@ -11,7 +11,6 @@ export default function AccountPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [funds, setFunds] = useState<Funds | null>(null);
   const [holdings, setHoldings] = useState<Holding[] | null>(null);
-  const [paperCash, setPaperCash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,17 +18,15 @@ export default function AccountPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [p, f, h, paper] = await Promise.all([
+        const [p, f, h] = await Promise.all([
           api<Profile>("/api/account/profile"),
           api<Funds>("/api/account/funds"),
           api<Holding[]>("/api/account/holdings"),
-          api<{ account: { cash: string } | null }>("/api/paper").catch(() => ({ account: null })),
         ]);
         if (cancelled) return;
         setProfile(p);
         setFunds(f);
         setHoldings(h);
-        setPaperCash(paper.account?.cash ?? null);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Could not load account");
       } finally {
@@ -48,7 +45,7 @@ export default function AccountPage() {
         <div>
           <p className="eyebrow">Account</p>
           <h1>Your money</h1>
-          <p className="lede">Real money stays in your trading account. Play money is only for Test mode.</p>
+          <p className="lede">Real money stays in Zerodha. This app only reads balances and holdings for analysis.</p>
         </div>
       </div>
       {loading ? <div className="card muted">Loading…</div> : null}
@@ -66,19 +63,20 @@ export default function AccountPage() {
             <div className="muted">{profile.userName}</div>
           </div>
           <div className="card kpi" data-coach="funds">
-            <div className="label">Real cash available</div>
+            <div className="label">Cash available</div>
             <div className="value">{funds?.equity.available ?? "—"}</div>
           </div>
           <div className="card kpi">
-            <div className="label">Play money</div>
-            <div className="value">{paperCash ?? "—"}</div>
-            <div className="muted">not real money</div>
+            <div className="label">Used margin</div>
+            <div className="value">{funds?.equity.usedMargin ?? "—"}</div>
           </div>
         </div>
       ) : null}
       <div className="card" data-coach="read-only">
         <h2>We only read after you trade</h2>
-        <p className="muted" data-coach="fill">This app never sends a live order. After you buy on Zerodha, dismiss the play on Options. We match the fill and learn. A miss is not a win.</p>
+        <p className="muted" data-coach="fill">
+          This app never sends an order. After you buy on Zerodha, dismiss the play on Options or Stocks. We match the fill and learn. A miss is not a win.
+        </p>
       </div>
       <div className="card">
         <h2>Replay a tutorial</h2>
@@ -99,25 +97,25 @@ export default function AccountPage() {
         </div>
       </div>
       <div className="card">
-        <h2>What you really own</h2>
+        <h2>Holdings</h2>
         {!holdings ? (
-          <p className="muted">Connect to see this list.</p>
+          <p className="muted">Connect Zerodha to load holdings.</p>
         ) : holdings.length === 0 ? (
-          <p className="muted">You do not own any stocks right now.</p>
+          <p className="muted">No holdings.</p>
         ) : (
           <table>
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Qty</th>
-                <th>Bought at</th>
-                <th>Now</th>
-                <th>Result</th>
+                <th>Avg</th>
+                <th>LTP</th>
+                <th>P&amp;L</th>
               </tr>
             </thead>
             <tbody>
               {holdings.map((row) => (
-                <tr key={row.instrument.symbol}>
+                <tr key={`${row.instrument.exchange}:${row.instrument.symbol}`}>
                   <td>{row.instrument.symbol}</td>
                   <td className="mono">{row.quantity}</td>
                   <td className="mono">{row.averagePrice}</td>

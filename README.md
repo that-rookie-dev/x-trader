@@ -1,8 +1,8 @@
 # xTrader
 
-Personal AI-assisted trading system. Product name is **xTrader**; package name is `xtrader`.
+Personal analysis / forecast desk for Indian F&O and stocks. Product name is **xTrader**; package name is `xtrader`.
 
-Default execution is **TEST (paper)**. Live Zerodha orders stay disabled until you confirm a static egress IP in Settings **and** whitelist that IP in the Kite developer console.
+**This app never places orders** (paper or live). It analyses markets, issues order instructions, and learns from fills it reads back from Zerodha. You execute every trade in the Zerodha app.
 
 ## Requirements
 
@@ -48,7 +48,7 @@ Terminal 2:
 npm run dev:web
 ```
 
-Open `http://127.0.0.1:3000`. Click **Connect Zerodha**. xTrader never collects your Kite password or OTP.
+Open `http://127.0.0.1:3000`, connect Zerodha, use Options / Stocks for instructions, dismiss plays after you trade.
 
 ## CLI
 
@@ -59,11 +59,10 @@ npm run cli -- start           # API + bundled Postgres
 
 ## Safety
 
+- Analysis desk only — no COPILOT/AUTO or LIVE order path.
 - AI profiles cannot call broker order APIs.
-- Paper cash/positions are stored separately from real holdings.
-- LIVE mode requires: Settings toggle, confirmed egress IP matching the current public IP, no halt, healthy broker session.
-- Autonomous LIVE is default-off.
-- If the browser cookie expires, click **Reconnect Zerodha**. Only the same linked client is accepted. Use `xtrader session reset` only to wipe sessions on the server.
+- Zerodha is read-only (quotes, funds, holdings, positions, orders for reconcile).
+- If the browser cookie expires, click **Reconnect Zerodha**.
 
 ## Tests
 
@@ -71,14 +70,18 @@ npm run cli -- start           # API + bundled Postgres
 npm test
 ```
 
-Real-account login is **unverified** until you complete Kite Connect in the browser.
-
 ## Install on a server (no Docker)
 
-See [docs/install.md](docs/install.md). `scripts/install.sh` unpacks a GitHub Release and starts a systemd/launchd unit.
+See [docs/install.md](docs/install.md).
+
+## Docs
+
+- [Install](docs/install.md)
+- [Architecture](docs/architecture.md)
+- [Phase status](docs/phase-status.md)
 
 ## Layout
 
-- `apps/api` — Express trading runtime
+- `apps/api` — Express desk runtime
 - `apps/web` — Next.js dashboard
-- `packages/domain` — broker-neutral contracts
+- `packages/domain` — shared contracts

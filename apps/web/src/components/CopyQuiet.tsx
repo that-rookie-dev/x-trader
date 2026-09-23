@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function CopyQuiet({ text }: { text: string }) {
+export function CopyQuiet({ text, label = "Copy name" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
     <button
@@ -15,7 +15,7 @@ export function CopyQuiet({ text }: { text: string }) {
         });
       }}
     >
-      {done ? "Copied" : "Copy name"}
+      {done ? "Copied" : label}
     </button>
   );
 }

@@ -7,6 +7,8 @@ import type { PlainIdea, Play, QuoteTick, StocksDesk } from "@/lib/desk";
 import { applyTickCandle, mergeCandles } from "@/lib/live";
 import { useEffect, useState } from "react";
 
+type Candle = { time: number; open: number; high: number; low: number; close: number; volume?: number };
+
 function tapeTime(iso: string): string {
   try {
     return new Intl.DateTimeFormat("en-GB", {
@@ -19,8 +21,6 @@ function tapeTime(iso: string): string {
     return "";
   }
 }
-
-type Candle = { time: number; open: number; high: number; low: number; close: number };
 
 function patchIdeas(ideas: PlainIdea[], quotes: QuoteTick[]): PlainIdea[] {
   if (!quotes.length) return ideas;
@@ -35,8 +35,6 @@ function patchIdeas(ideas: PlainIdea[], quotes: QuoteTick[]): PlainIdea[] {
 export default function StocksPage() {
   const [desk, setDesk] = useState<StocksDesk | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [notes, setNotes] = useState<Record<string, string>>({});
   const [candles, setCandles] = useState<Candle[]>([]);
   const [chartSymbol, setChartSymbol] = useState<string | null>(null);
 
@@ -136,29 +134,6 @@ export default function StocksPage() {
     };
   }, [chartSymbol]);
 
-  async function tryPaper(idea: PlainIdea) {
-    setBusy(true);
-    try {
-      await api("/api/paper/try", {
-        method: "POST",
-        body: JSON.stringify({
-          exchange: idea.exchange,
-          symbol: idea.contract,
-          side: idea.action === "SELL" ? "SELL" : "BUY",
-          instrumentType: idea.instrumentType,
-        }),
-      });
-      setNotes((prev) => ({ ...prev, [idea.contract]: "Saved as a play-money try. Open My trades to see how it goes." }));
-    } catch (e) {
-      setNotes((prev) => ({
-        ...prev,
-        [idea.contract]: e instanceof Error ? e.message : "Could not place play-money order",
-      }));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function dismissPlay(id: string) {
     try {
       const data = await api<{ play: Play }>(`/api/plays/${id}/dismiss`, { method: "POST", body: "{}" });
@@ -178,7 +153,7 @@ export default function StocksPage() {
         <div>
           <p className="eyebrow">Stocks</p>
           <h1>Swing book, same-day overlay</h1>
-          <p className="lede">Swing and positional ranks are the main list. TODAY is only a same-session breakout. You still place the order on Zerodha.</p>
+          <p className="lede">Instructions only — place buys and sells on Zerodha. We read fills back to learn.</p>
         </div>
       </div>
       {error ? <p className="down">{error}</p> : null}
@@ -209,45 +184,24 @@ export default function StocksPage() {
         <section data-coach="today">
           <h2>TODAY</h2>
           {(desk?.today ?? []).map((idea) => (
-            <AdviceCard
-              key={`today:${idea.contract}`}
-              idea={idea}
-              paperMode={Boolean(desk?.paperMode)}
-              busy={busy}
-              note={notes[idea.contract]}
-              onPaper={(row) => void tryPaper(row)}
-            />
+            <AdviceCard key={`today:${idea.contract}`} idea={idea} />
           ))}
           {desk && (desk.today ?? []).length === 0 ? <div className="empty">No same-day volume breakout right now.</div> : null}
         </section>
         <section data-coach="swing">
           <h2>Swing / positional</h2>
           {(desk?.buys ?? []).map((idea) => (
-            <AdviceCard
-              key={`buy:${idea.contract}`}
-              idea={idea}
-              paperMode={Boolean(desk?.paperMode)}
-              busy={busy}
-              note={notes[idea.contract]}
-              onPaper={(row) => void tryPaper(row)}
-            />
+            <AdviceCard key={`buy:${idea.contract}`} idea={idea} />
           ))}
           {desk && desk.buys.length === 0 ? <div className="empty">Nothing looks worth buying today.</div> : null}
         </section>
         <section>
           <h2>Sell today</h2>
           {(desk?.sells ?? []).map((idea) => (
-            <AdviceCard
-              key={`sell:${idea.contract}`}
-              idea={idea}
-              paperMode={Boolean(desk?.paperMode)}
-              busy={busy}
-              note={notes[idea.contract]}
-              onPaper={(row) => void tryPaper(row)}
-            />
+            <AdviceCard key={`sell:${idea.contract}`} idea={idea} />
           ))}
           {desk && desk.sells.length === 0 ? (
-            <div className="empty">No sell advice. The helper only talks about selling when you already own something.</div>
+            <div className="empty">No sell advice. The helper only talks about selling when you already own something on Zerodha.</div>
           ) : null}
         </section>
       </div>

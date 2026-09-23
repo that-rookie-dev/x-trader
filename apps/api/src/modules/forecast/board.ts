@@ -5,7 +5,7 @@ import type { MarketDataService } from "../market/service.js";
 import type { LiveGate } from "../settings/live-gate.js";
 import type { JournalService } from "../journal/service.js";
 import type { ForecastEngine } from "./engine.js";
-import { friendlyDate, loadHeldKeys, markContract, paperHeldSymbols, stanceLine, visibleIdeas } from "./desk.js";
+import { friendlyDate, loadHeldKeys, markContract, stanceLine, visibleIdeas } from "./desk.js";
 import { compareEod, eodTradeView, nearestStrike, predictEodSpot, viewAiStudy } from "./eod.js";
 import { buyNetFloor, maxPain, putCallRatio, sessionClock } from "./chain-tape.js";
 import type { SignalStore } from "./signals.js";
@@ -35,7 +35,7 @@ export async function buildOptionsBoard(
   const spot = Number(forecast.lastPrice);
   const chain = await s.market.listOptionChain(symbol, input.expiry ?? forecast.derivatives?.expiry ?? null, spot);
   const held = await loadHeldKeys(s.db, s.read);
-  const paperHeld = await paperHeldSymbols(s.db);
+  const paperHeld = new Set<string>();
   const quoteItems = [
     { exchange, symbol },
     ...(chain.future ? [{ exchange: chain.future.exchange, symbol: chain.future.tradingsymbol }] : []),
@@ -46,7 +46,6 @@ export async function buildOptionsBoard(
   ].filter((item): item is { exchange: string; symbol: string } => Boolean(item));
   const quotes = await s.market.quoteMany(quoteItems);
   const qmap = new Map(quotes.map((q) => [`${q.exchange}:${q.symbol}`, q]));
-  const settings = await s.gate.snapshot();
   const ideas = forecast.suggestions ?? [];
   const liveSpot = Number(qmap.get(`${exchange}:${symbol}`)?.lastPrice ?? forecast.lastPrice);
   const sessionLive = {
@@ -145,7 +144,8 @@ export async function buildOptionsBoard(
       volume: q?.volume ?? null,
       mark: view.mark,
       why: view.why,
-      canPaper: view.mark === "BUY" || (view.mark === "SELL" && paperHeld.has(leg.tradingsymbol.toUpperCase())),
+      canInstruct: view.mark === "BUY" || view.mark === "SELL",
+      canPaper: false,
       lotSize: view.lotSize,
       eodPremium: view.eodPremium,
       moneyness: view.moneyness,
@@ -309,6 +309,5 @@ export async function buildOptionsBoard(
     buys,
     sells,
     plays: boardPlays,
-    paperMode: settings.executionMode === "PAPER",
   };
 }

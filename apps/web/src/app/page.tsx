@@ -22,7 +22,6 @@ export default function OptionsPage() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [selected, setSelected] = useState<{ symbol: string; kind: "CE" | "PE" | "FUT" } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [lots, setLots] = useState(1);
   const [studying, setStudying] = useState(false);
@@ -206,28 +205,6 @@ export default function OptionsPage() {
       source.close();
     };
   }, [symbol, exchange, expiry]);
-
-  async function tryPaper(idea: { symbol: string; exchange?: string; mark: AgentMark; canPaper: boolean }) {
-    if (!board?.paperMode || !idea.canPaper) return;
-    setBusy(true);
-    setNote(null);
-    try {
-      await api("/api/paper/try", {
-        method: "POST",
-        body: JSON.stringify({
-          exchange: idea.exchange ?? "NFO",
-          symbol: idea.symbol,
-          side: idea.mark === "SELL" ? "SELL" : "BUY",
-          instrumentType: idea.symbol.endsWith("FUT") ? "FUTURE" : "OPTION",
-        }),
-      });
-      setNote("Paper fill saved. Check My trades.");
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : "Paper order failed");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function dismissPlay(id: string) {
     try {
@@ -530,9 +507,6 @@ export default function OptionsPage() {
             kind={selected?.kind ?? "CE"}
             lots={lots}
             onLots={setLots}
-            paperMode={Boolean(board?.paperMode)}
-            busy={busy}
-            onPaper={() => void tryPaper(focusLeg)}
           />
         ) : (
           <div className="card pnl-card empty-pnl">
@@ -601,17 +575,11 @@ function PnlBox({
   kind,
   lots,
   onLots,
-  paperMode,
-  busy,
-  onPaper,
 }: {
   leg: ChainLeg;
   kind: string;
   lots: number;
   onLots: (n: number) => void;
-  paperMode: boolean;
-  busy: boolean;
-  onPaper: () => void;
 }) {
   const entry = Number(leg.lastPrice ?? leg.pnl?.entry ?? 0);
   const exit = Number(leg.eodPremium ?? leg.pnl?.exit ?? 0);
@@ -717,11 +685,9 @@ function PnlBox({
           GST <b className="mono">{rupee(gst.toFixed(2))}</b>
         </span>
       </div>
-      {paperMode && leg.canPaper ? (
-        <button type="button" className="btn primary pnl-paper" disabled={busy} onClick={onPaper}>
-          {leg.mark === "SELL" ? "PAPER SELL" : "PAPER BUY"}
-        </button>
-      ) : null}
+      <p className="muted" style={{ marginTop: 10 }}>
+        Instruction only — place on Zerodha. This app never sends the order.
+      </p>
     </aside>
   );
 }

@@ -117,7 +117,6 @@ export type OptionsBoard = {
   buys: PlainIdea[];
   sells: PlainIdea[];
   plays?: Play[];
-  paperMode: boolean;
 };
 
 export type OptionsAdvice = {
@@ -130,7 +129,6 @@ export type OptionsAdvice = {
   stance: string;
   ideas: PlainIdea[];
   wait: boolean;
-  paperMode: boolean;
 };
 
 export type StocksDesk = {
@@ -138,7 +136,6 @@ export type StocksDesk = {
   sells: PlainIdea[];
   today?: PlainIdea[];
   plays?: Play[];
-  paperMode: boolean;
 };
 
 export type PlayStatus = "OPEN" | "DISMISSED" | "FILLED" | "PARTIAL" | "MISSED" | "EXPIRED";

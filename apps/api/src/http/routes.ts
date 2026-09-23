@@ -1,13 +1,12 @@
 import { sql } from "drizzle-orm";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { normalizeAgentMode, tradeIntentSchema } from "@xtrader/domain";
+import { AppError } from "@xtrader/domain";
 import { asyncHandler } from "../http/middleware.js";
 import type { AppServices } from "../app/context.js";
 import {
   friendlyDate,
   loadHeldKeys,
-  paperHeldSymbols,
   stanceLine,
   visibleIdeas,
 } from "../modules/forecast/desk.js";
@@ -42,11 +41,9 @@ export function registerRoutes(app: Express, s: AppServices): void {
         needsReconnect: linked && !session,
         broker,
         settings: {
-          executionMode: settings.executionMode,
-          agentMode: normalizeAgentMode(settings.agentMode),
+          deskMode: settings.deskMode,
+          ordersEnabled: false,
           haltActive: settings.haltActive,
-          liveReady: settings.liveReady,
-          liveBlockedReason: settings.liveBlockedReason,
         },
       });
     }),
@@ -206,39 +203,24 @@ export function registerRoutes(app: Express, s: AppServices): void {
   app.get(
     "/api/paper",
     auth,
-    asyncHandler(async (_req, res) => {
-      await s.paper.markToMarket();
-      res.json(await s.execution.paperState());
+    asyncHandler(async (_req, _res) => {
+      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
     }),
   );
 
   app.post(
     "/api/paper/orders",
     auth,
-    asyncHandler(async (req, res) => {
-      const body = z
-        .object({
-          exchange: z.string().default("NSE"),
-          symbol: z.string(),
-          side: z.enum(["BUY", "SELL"]),
-          quantity: z.number().int().positive(),
-          orderType: z.enum(["MARKET", "LIMIT"]).default("MARKET"),
-          price: z.string().optional(),
-        })
-        .parse(req.body);
-      const result = await s.execution.paperManual({
-        accountId: req.session!.userId,
-        ...body,
-      });
-      res.json(result);
+    asyncHandler(async (_req, _res) => {
+      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
     }),
   );
 
   app.post(
     "/api/paper/positions/:id/close",
     auth,
-    asyncHandler(async (req, res) => {
-      res.json(await s.execution.closePaperAndLearn(String(req.params.id ?? ""), "USER"));
+    asyncHandler(async (_req, _res) => {
+      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
     }),
   );
 
@@ -300,31 +282,16 @@ export function registerRoutes(app: Express, s: AppServices): void {
   app.post(
     "/api/proposals",
     auth,
-    asyncHandler(async (req, res) => {
-      const body = z
-        .object({
-          source: z.string().default("manual"),
-          intent: tradeIntentSchema,
-        })
-        .parse(req.body);
-      const settings = await s.gate.snapshot();
-      const result = await s.execution.propose({
-        accountId: req.session!.userId,
-        intent: body.intent,
-        source: String(body.source),
-        executionMode: settings.executionMode,
-      });
-      res.json(result);
+    asyncHandler(async (_req, _res) => {
+      throw new AppError("ORDERING_DISABLED", "xTrader never places orders. Execute on Zerodha.", 403);
     }),
   );
 
   app.post(
     "/api/proposals/:id/approve",
     auth,
-    asyncHandler(async (req, res) => {
-      const id = String(req.params.id ?? "");
-      const result = await s.execution.approveAndExecute(id, req.session!.userId);
-      res.json(result);
+    asyncHandler(async (_req, _res) => {
+      throw new AppError("ORDERING_DISABLED", "xTrader never places orders. Execute on Zerodha.", 403);
     }),
   );
 
@@ -342,24 +309,12 @@ export function registerRoutes(app: Express, s: AppServices): void {
     asyncHandler(async (req, res) => {
       const body = z.object({ exchange: z.string().default("NSE"), symbol: z.string() }).parse(req.body);
       const evaluated = await s.strategy.evaluate(body.exchange, body.symbol);
-      const settings = await s.gate.snapshot();
-      if (evaluated.decision === "TRADE" && settings.agentMode === "AUTO") {
-        const { market: _market, ...intent } = evaluated;
-        const proposed = await s.execution.propose({
-          accountId: req.session!.userId,
-          intent,
-          source: "strategy",
-          executionMode: settings.executionMode,
-        });
-        res.json({ decision: evaluated, proposed });
-        return;
-      }
       await s.journal.record({
-        executionMode: settings.executionMode,
+        executionMode: "ANALYSIS",
         instrument: `${body.exchange}:${body.symbol}`,
         source: "strategy",
         decision: evaluated.decision === "TRADE" ? "TRADE" : "NO_TRADE",
-        snapshot: { decision: evaluated, copilotOnly: settings.agentMode !== "AUTO" },
+        snapshot: { decision: evaluated },
       });
       res.json({ decision: evaluated });
     }),
@@ -376,24 +331,13 @@ export function registerRoutes(app: Express, s: AppServices): void {
         exchange: body.exchange,
         market,
       });
-      const settings = await s.gate.snapshot();
-      if (decision.decision === "TRADE" && settings.agentMode === "AUTO") {
-        const proposed = await s.execution.propose({
-          accountId: req.session!.userId,
-          intent: decision,
-          source: "ai",
-          executionMode: settings.executionMode,
-        });
-        res.json({ decision, proposed });
-        return;
-      }
       await s.journal.record({
-        executionMode: settings.executionMode,
+        executionMode: "ANALYSIS",
         instrument: `${body.exchange}:${body.symbol}`,
         source: "ai",
         decision: decision.decision === "TRADE" ? "TRADE" : "NO_TRADE",
         thesis: "decision" in decision && decision.decision === "TRADE" ? decision.thesis : undefined,
-        snapshot: { decision, market, copilotOnly: settings.agentMode !== "AUTO" },
+        snapshot: { decision, market },
       });
       res.json({ decision });
     }),
@@ -527,7 +471,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
     s.sessions.middleware("optional"),
     asyncHandler(async (_req, res) => {
       res.json({
-        agentMode: normalizeAgentMode((await s.gate.snapshot()).agentMode),
+        deskMode: "ANALYSIS",
         items: await s.forecasts.latest(),
       });
     }),
@@ -538,7 +482,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
     auth,
     asyncHandler(async (_req, res) => {
       const items = await s.forecasts.refreshWatchlist();
-      res.json({ items, agentMode: normalizeAgentMode((await s.gate.snapshot()).agentMode) });
+      res.json({ items, deskMode: "ANALYSIS" });
     }),
   );
 
@@ -690,9 +634,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
       const mode = stored ? "live" : "full";
       const forecast = await s.forecasts.refreshOne(exchange, symbol, mode, expiry);
       const held = await loadHeldKeys(s.db, s.read);
-      const paperHeld = await paperHeldSymbols(s.db);
-      const ideas = visibleIdeas(forecast.suggestions ?? [], held, paperHeld, "FNO");
-      const settings = await s.gate.snapshot();
+      const ideas = visibleIdeas(forecast.suggestions ?? [], held, new Set(), "FNO");
       res.json({
         symbol,
         exchange,
@@ -703,7 +645,6 @@ export function registerRoutes(app: Express, s: AppServices): void {
         stance: stanceLine(forecast.bias),
         ideas,
         wait: ideas.length === 0,
-        paperMode: settings.executionMode === "PAPER",
       });
     }),
   );
@@ -720,16 +661,8 @@ export function registerRoutes(app: Express, s: AppServices): void {
   app.post(
     "/api/paper/try",
     auth,
-    asyncHandler(async (req, res) => {
-      const body = z
-        .object({
-          exchange: z.string(),
-          symbol: z.string(),
-          side: z.enum(["BUY", "SELL"]),
-          instrumentType: z.enum(["EQUITY", "OPTION", "FUTURE"]).optional(),
-        })
-        .parse(req.body);
-      res.json(await s.execution.paperFromAdvice({ accountId: req.session!.userId, ...body }));
+    asyncHandler(async (_req, _res) => {
+      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
     }),
   );
 
@@ -737,9 +670,8 @@ export function registerRoutes(app: Express, s: AppServices): void {
     "/api/trades/desk",
     auth,
     asyncHandler(async (_req, res) => {
-      await s.paper.markToMarket();
-      const paper = await s.execution.paperState();
       const journal = { entries: await s.journal.list(40), memory: await s.journal.memory() };
+      const plays = await s.plays.list({ limit: 40 });
       let holdings = null;
       let brokerPos = null;
       try {
@@ -752,7 +684,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
       } catch {
         brokerPos = null;
       }
-      res.json({ paper, journal, holdings, brokerPos });
+      res.json({ journal, holdings, brokerPos, plays });
     }),
   );
 
@@ -795,11 +727,10 @@ export function registerRoutes(app: Express, s: AppServices): void {
     asyncHandler(async (req, res) => {
       const body = z
         .object({
-          executionMode: z.enum(["PAPER", "LIVE"]).optional(),
-          agentMode: z.enum(["COPILOT", "AUTO", "MANUAL", "AUTONOMOUS"]).optional(),
-          liveTradingEnabled: z.boolean().optional(),
-          autonomousTradingEnabled: z.boolean().optional(),
-          confirmEgress: z.boolean().optional(),
+          haltActive: z.boolean().optional(),
+          haltPolicy: z.enum(["MAINTAIN", "CANCEL_ENTRIES", "FLATTEN"]).optional(),
+          haltReason: z.string().nullable().optional(),
+          activeAiProfileId: z.string().nullable().optional(),
         })
         .parse(req.body);
       res.json(await s.gate.patch(body));

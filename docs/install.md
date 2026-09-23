@@ -28,6 +28,6 @@ Click **Reconnect Zerodha** in the UI. Only the same linked client is accepted. 
 ~/.xtrader/bin/xtrader session reset
 ```
 
-## Live orders
+## Orders
 
-Zerodha rejects order place/modify/cancel unless the request egress IP is whitelisted as static. Confirm that IP in Settings after the process is running on the VPS.
+xTrader never places paper or live orders. Whitelist / static IP is only relevant if you later change that product rule. Today the app only reads Kite data.

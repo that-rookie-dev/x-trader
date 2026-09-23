@@ -8,7 +8,6 @@ import {
   brokerAccounts,
   brokerLoginAttempts,
   brokerSessions,
-  paperAccounts,
   riskProfiles,
   systemEvents,
   users,
@@ -260,12 +259,8 @@ export class ZerodhaAuthService {
   }
 
   private async seedOwnerDefaults(userId: string): Promise<void> {
-    await this.db.insert(paperAccounts).values({
-      userId,
-      cash: this.env.PAPER_INITIAL_CAPITAL_INR,
-    });
     await this.db.insert(riskProfiles).values({
-      capital: this.env.PAPER_INITIAL_CAPITAL_INR,
+      capital: "100000.00",
       maxDailyLoss: "1000.00",
       maxRiskPerTrade: "300.00",
       maxOpenPositions: 3,

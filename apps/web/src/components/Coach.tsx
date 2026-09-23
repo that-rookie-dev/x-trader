@@ -27,15 +27,15 @@ export const TOURS: Record<string, CoachStep[]> = {
     { id: "today", title: "Today is extra", body: "Same-day volume breakouts sit here. They expire at 15:15 IST.", target: "today" },
     { id: "card", title: "Open a buy card", body: "Rank, relative strength vs Nifty, and the ATR stop live on the card.", target: "card" },
     { id: "rs", title: "RS and ATR", body: "RS vs Nifty tells you if the stock is stronger than the index. ATR sizes the stop.", target: "rs" },
-    { id: "paper", title: "Paper only in Test", body: "Try with play money if the badge says TEST. Live orders stay on Zerodha.", target: "paper" },
+    { id: "instruct", title: "Copy the instruction", body: "Copy the instruction and place it on Zerodha. This app never sends the order.", target: "instruct" },
   ],
   zerodha: [
     { id: "connect", title: "Connect Zerodha", body: "Connect so the helper can read prices, funds, and later your orders.", target: "connect" },
     { id: "funds", title: "Your cash stays there", body: "This number is your real cash at Zerodha. The app does not move it.", target: "funds" },
-    { id: "read-only", title: "We only read", body: "After you trade on Zerodha, we match the order to the play. No live order leaves this app.", target: "read-only" },
+    { id: "read-only", title: "We only read", body: "After you trade on Zerodha, we match the order to the play. No order leaves this app.", target: "read-only" },
   ],
   alerts: [
-    { id: "buy-meaning", title: "What BUY means", body: "BUY is a tradable forecast after costs — not an order. You still decide.", target: "buy-meaning" },
+    { id: "buy-meaning", title: "What BUY means", body: "BUY is an order instruction after costs — not an order. You still decide on Zerodha.", target: "buy-meaning" },
     { id: "dismiss", title: "Dismiss vs fill", body: "Dismiss means you saw it. If Zerodha shows the contract, we mark FILLED and learn.", target: "dismiss" },
     { id: "fill", title: "Missed is not a win", body: "If the window ends with no order, it is MISSED. We do not pretend that was profit.", target: "fill" },
   ],

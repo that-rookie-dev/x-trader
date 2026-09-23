@@ -1,16 +1,9 @@
-import { and, eq } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
-import { positions } from "../../db/schema.js";
 import type { ZerodhaReadAdapter } from "../brokers/zerodha/read-adapter.js";
 import type { Idea } from "./levels.js";
 
 export async function loadHeldKeys(db: Database, read: ZerodhaReadAdapter): Promise<Set<string>> {
   const held = new Set<string>();
-  const paper = await db
-    .select()
-    .from(positions)
-    .where(and(eq(positions.status, "OPEN"), eq(positions.executionMode, "PAPER")));
-  for (const pos of paper) addHeld(held, pos.exchange, pos.symbol);
   try {
     for (const row of await read.getHoldings()) {
       if (Number(row.quantity) !== 0) addHeld(held, row.instrument.exchange, row.instrument.symbol);
@@ -28,12 +21,9 @@ export async function loadHeldKeys(db: Database, read: ZerodhaReadAdapter): Prom
   return held;
 }
 
-export async function paperHeldSymbols(db: Database): Promise<Set<string>> {
-  const rows = await db
-    .select()
-    .from(positions)
-    .where(and(eq(positions.status, "OPEN"), eq(positions.executionMode, "PAPER")));
-  return new Set(rows.map((row) => row.symbol.toUpperCase()));
+/** @deprecated Paper is disabled — always empty. */
+export async function paperHeldSymbols(_db: Database): Promise<Set<string>> {
+  return new Set();
 }
 
 function addHeld(held: Set<string>, exchange: string, symbol: string): void {

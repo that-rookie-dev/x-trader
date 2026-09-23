@@ -39,8 +39,8 @@ export async function boot(env: Env) {
   if (!settings) {
     await db.insert(appSettings).values({
       id: 1,
-      executionMode: env.EXECUTION_MODE,
-      agentMode: env.AGENT_MODE,
+      executionMode: "PAPER",
+      agentMode: "COPILOT",
       liveTradingEnabled: false,
       autonomousTradingEnabled: false,
     });
@@ -56,7 +56,8 @@ export async function boot(env: Env) {
   const paper = new PaperExecutionAdapter(db);
   const gate = new LiveGate(db);
   await gate.ensureRow();
-  const live = new ZerodhaOrderAdapter(auth, kite, gate);
+  await gate.patch({});
+  const live = new ZerodhaOrderAdapter();
   const journal = new JournalService(db);
   const strategy = new StrategyEngine(db);
   const execution = new ExecutionCoordinator(db, risk, paper, live, gate, journal, market);
@@ -65,7 +66,7 @@ export async function boot(env: Env) {
   const forecasts = new ForecastEngine(db, market, research, ai, risk);
   const signals = new SignalStore(db, market);
   const plays = new PlayStore(db, market, journal);
-  const agent = new AgentLoop(db, gate, market, forecasts, execution, journal, signals, plays, log, read);
+  const agent = new AgentLoop(db, gate, market, forecasts, journal, signals, plays, log, read);
 
   const services: AppServices = {
     env,
@@ -97,7 +98,6 @@ export async function boot(env: Env) {
 
   const quoteLoop = setInterval(() => {
     void market.refreshQuotes().catch((err) => log.warn({ err }, "quote refresh failed"));
-    void paper.markToMarket().catch(() => undefined);
   }, 3000);
 
   const liveLoop = setInterval(() => {
