@@ -18,7 +18,8 @@
     "start": "npm run start:api",
     "start:api": "NODE_ENV=production npm run start -w @xtrader/api",
     "start:web": "NODE_ENV=production npm run start -w @xtrader/web",
-    "cli": "npm run cli -w @xtrader/api"
+    "cli": "npm run cli -w @xtrader/api",
+    "pack:release": "bash scripts/pack-release.sh"
   },
   "engines": {
     "node": ">=20.11"

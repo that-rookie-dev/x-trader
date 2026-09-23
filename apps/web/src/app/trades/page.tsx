@@ -8,7 +8,6 @@ import { useEffect, useState } from "react";
 type Memory = { id: string; strategy: string; regime: string; sampleCount: number; wins: number; losses: number; expectancy?: string | null };
 type Holding = { instrument: { symbol: string; exchange: string }; quantity: string; averagePrice: string; lastPrice?: string; pnl?: string };
 type BrokerPos = { instrument: { symbol: string; exchange: string }; quantity: string; lastPrice?: string; pnl?: string };
-type PlayRow = { id: string; status: string; contract: string; side: string; expectancyNote?: string | null; at: string };
 type PaperPos = {
   id: string;
   symbol: string;
@@ -27,7 +26,6 @@ type Desk = {
   journal: { memory: Memory[] };
   holdings: Holding[] | null;
   brokerPos: BrokerPos[] | null;
-  plays: PlayRow[];
   paper?: {
     cash: string;
     paperAutopilot: boolean;
@@ -91,7 +89,6 @@ export default function TradesPage() {
   const paperMem = memory.filter((m) => m.id); // all memory; expectancy from paper+live
   const wins = paperMem.reduce((sum, row) => sum + row.wins, 0);
   const losses = paperMem.reduce((sum, row) => sum + row.losses, 0);
-  const plays = desk?.plays ?? [];
   const paperOpen = desk?.paper?.positions ?? [];
   const paperClosed = desk?.paper?.closed ?? [];
   const marketClosed = Boolean(desk?.paper?.marketClosed);
@@ -288,44 +285,6 @@ export default function TradesPage() {
                   </tr>
                 );
               })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="section-head">
-          <h2>Plays</h2>
-        </div>
-        {plays.length === 0 ? (
-          <p className="muted">No plays yet. Filled ideas from Options/Stocks land here after reconcile.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Status</th>
-                <th>Contract</th>
-                <th>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plays.map((row) => (
-                <tr key={row.id}>
-                  <td className="mono">{new Date(row.at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })}</td>
-                  <td>
-                    <span
-                      className={`badge ${row.status === "FILLED" || row.status === "PARTIAL" ? "ok" : row.status === "MISSED" || row.status === "EXPIRED" ? "live" : "warn"}`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td>
-                    {row.side} {row.contract}
-                  </td>
-                  <td className="muted">{row.expectancyNote ?? "—"}</td>
-                </tr>
-              ))}
             </tbody>
           </table>
         )}

@@ -32,8 +32,10 @@ import { PredictionLedger } from "./modules/learning/ledger.js";
 import { AutoTuner } from "./modules/learning/tuner.js";
 import { PredictionReconciler } from "./modules/learning/reconcile.js";
 import { TrainingDesk } from "./modules/learning/training-desk.js";
+import { UpdateService } from "./modules/update/service.js";
 import type { AppServices } from "./app/context.js";
 import { appSettings } from "./db/schema.js";
+import { startWebServer } from "./web-server.js";
 
 export async function boot(env: Env) {
   const log = createLogger(env);
@@ -75,6 +77,7 @@ export async function boot(env: Env) {
   const ledger = new PredictionLedger(db);
   const tuner = new AutoTuner(forecastParams, ledger);
   const training = new TrainingDesk(db, forecastParams);
+  const updates = new UpdateService(env, log);
   const trainer = new PaperTrainer(db, paper, journal, ledger);
   const execution = new ExecutionCoordinator(db, risk, paper, live, gate, journal, market, trainer);
   const ai = new AiService(db, crypto, ledger, forecastParams);
@@ -132,7 +135,13 @@ export async function boot(env: Env) {
     tuner,
     reconciler,
     training,
+    updates,
   };
+
+  log.info(
+    { version: updates.currentVersion(), channel: updates.installRoot() ? "bundle" : "source" },
+    "xTrader version",
+  );
 
   const app = createHttpApp(services);
 
@@ -165,6 +174,8 @@ export async function boot(env: Env) {
     log.info({ url: `http://${env.API_HOST}:${env.API_PORT}` }, "xTrader API listening");
   });
 
+  const web = startWebServer(env, log);
+
   void market.connectStream().catch((err) => log.warn({ err }, "ticker start failed"));
 
   const shutdown = async () => {
@@ -173,6 +184,9 @@ export async function boot(env: Env) {
     clearInterval(studyLoop);
     clearInterval(playLoop);
     clearInterval(learnLoop);
+    if (web && !web.killed) {
+      web.kill("SIGTERM");
+    }
     await market.disconnectStream();
     server.close();
     await client.end({ timeout: 5 });
@@ -181,11 +195,13 @@ export async function boot(env: Env) {
   };
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
-  return { services, server, postgres };
+  return { services, server, postgres, web };
 }
 
 export async function main(): Promise<void> {
   const { config } = await import("dotenv");
+  // Install prefix (.env next to bin/) or monorepo root when started from apps/api.
+  config({ path: resolve(process.cwd(), ".env") });
   config({ path: resolve(process.cwd(), "../../.env") });
   config();
   const env = parseEnv(process.env);

@@ -8,6 +8,7 @@ import { showDec } from "@/lib/format";
 import { sessionPhase, sessionPhaseLabel, type SessionPhase } from "@/lib/session";
 import { Coach, readSeen, tourForPath } from "@/components/Coach";
 import { SetupCredentials } from "@/components/SetupCredentials";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { VectorAtmosphere } from "@/components/VectorAtmosphere";
 
 const NAV = [
@@ -309,6 +310,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           )}
         </header>
         <div className="content">
+          <UpdateBanner />
           {boot && !boot.authenticated ? (
             <div className="card gate-card">
               <p className="eyebrow">

@@ -17,4 +17,6 @@ apps/web/out/
 .turbo/
 graphify-out/
 .tmp-agent-x/
+dist-release/
+xtrader-*.tar.gz
 

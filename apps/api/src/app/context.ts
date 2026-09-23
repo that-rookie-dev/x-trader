@@ -26,6 +26,7 @@ import type { ForecastParamsStore } from "../modules/learning/params-store.js";
 import type { AutoTuner } from "../modules/learning/tuner.js";
 import type { PredictionReconciler } from "../modules/learning/reconcile.js";
 import type { TrainingDesk } from "../modules/learning/training-desk.js";
+import type { UpdateService } from "../modules/update/service.js";
 
 export interface AppServices {
   env: Env;
@@ -57,4 +58,5 @@ export interface AppServices {
   tuner: AutoTuner;
   reconciler: PredictionReconciler;
   training: TrainingDesk;
+  updates: UpdateService;
 }

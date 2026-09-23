@@ -17,8 +17,38 @@ import { marketBlocksPaper } from "../modules/forecast/chain-tape.js";
 
 export function registerRoutes(app: Express, s: AppServices): void {
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", name: "xTrader", ts: new Date().toISOString() });
+    res.json({
+      status: "ok",
+      name: "xTrader",
+      version: s.updates.currentVersion(),
+      ts: new Date().toISOString(),
+    });
   });
+
+  app.get(
+    "/api/update/status",
+    asyncHandler(async (req, res) => {
+      const force = String(req.query.refresh ?? "") === "1";
+      res.json(await s.updates.status(force));
+    }),
+  );
+
+  app.post(
+    "/api/update/apply",
+    asyncHandler(async (req, res) => {
+      const tag = typeof req.body?.tag === "string" ? req.body.tag : undefined;
+      try {
+        const result = await s.updates.apply(tag);
+        res.status(202).json(result);
+      } catch (err) {
+        const code = err instanceof Error && "code" in err ? String((err as { code?: string }).code) : "UPDATE_FAILED";
+        const message = err instanceof Error ? err.message : "Update failed";
+        const status =
+          code === "UPDATE_BUSY" ? 409 : code === "UPDATE_NOT_SUPPORTED" || code === "UPDATE_NONE" ? 400 : 500;
+        res.status(status).json({ error: { code, message } });
+      }
+    }),
+  );
 
   app.get(
     "/api/ready",
@@ -53,6 +83,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
           paperCash: settings.paperCash,
           paperOpenCount: settings.paperOpenCount,
         },
+        version: s.updates.currentVersion(),
       });
     }),
   );

@@ -17,6 +17,7 @@ import type { ForecastParamsStore } from "../learning/params-store.js";
 import type { PredictionLedger } from "../learning/ledger.js";
 
 import type { TrainingDesk } from "../learning/training-desk.js";
+import { MARKET_CLOSE_MIN, MARKET_OPEN_MIN, istMinutes } from "../forecast/chain-tape.js";
 
 const SCAN_BATCH = 4;
 
@@ -25,6 +26,9 @@ export class AgentLoop {
   private running = false;
   private cursor = 0;
   private stocksTick = 0;
+  private scanCycle = 0;
+  private scanDone = 0;
+  private scanTotal = 0;
 
   constructor(
     private readonly db: Database,
@@ -51,26 +55,38 @@ export class AgentLoop {
       const settings = await this.gate.snapshot();
       if (settings.haltActive) {
         this.training?.setPhase("halted", "Desk halt active");
-        this.log.debug("desk loop paused: halt active");
         return;
       }
-      this.training?.setPhase("scanning", "Refreshing quotes + watchlist boards");
+      const mins = istMinutes(new Date());
+      const marketOpen = mins >= MARKET_OPEN_MIN && mins < MARKET_CLOSE_MIN;
+
       await this.market.refreshQuotes().catch((err) => this.log.warn({ err }, "quote refresh in agent loop failed"));
       await this.forecasts.refreshWatchlist("live").catch((err) => this.log.warn({ err }, "forecast refresh failed"));
-      await this.scanDesks().catch((err) => this.log.warn({ err }, "desk signal scan failed"));
-      this.stocksTick += 1;
-      if (this.stocksTick % 3 === 0) {
-        await this.scanStocks().catch((err) => this.log.warn({ err }, "stocks autopilot scan failed"));
+
+      if (marketOpen) {
+        this.training?.setPhase("scanning", "Refreshing quotes + whitelist boards");
+        await this.scanDesks().catch((err) => this.log.warn({ err }, "desk signal scan failed"));
+        this.stocksTick += 1;
+        if (this.stocksTick % 3 === 0) {
+          await this.scanStocks().catch((err) => this.log.warn({ err }, "stocks autopilot scan failed"));
+        }
       }
+
       await this.plays.tick(this.read).catch((err) => this.log.warn({ err }, "play reconcile failed"));
       if (this.reconciler) {
-        this.training?.setPhase("resolving", "Resolving EOD predictions when closed");
         const watch = await this.market.listWatchlist();
         await this.reconciler
           .tick(watch.map((w) => ({ exchange: w.exchange, symbol: w.symbol })))
           .catch((err) => this.log.warn({ err }, "prediction reconcile failed"));
       }
-      this.training?.setPhase("idle", null);
+      const prog = this.training?.snapshotLive().progress;
+      if (prog && prog.kind !== "idle" && prog.pct < 100) {
+        /* keep current cycle message */
+      } else if (!marketOpen && (prog?.pct ?? 100) >= 100) {
+        this.training?.setPhase("idle", prog?.label ?? "Session complete — waiting for next open");
+      } else {
+        this.training?.setPhase("idle", prog?.label ?? "Waiting for next cycle");
+      }
     } catch (err) {
       this.log.warn({ err }, "agent loop tick failed");
       this.training?.setPhase("idle", err instanceof Error ? err.message : "tick failed");
@@ -79,19 +95,34 @@ export class AgentLoop {
     }
   }
 
-  /** Round-robin scan of tracked watchlist F&O underlyings (falls back to index pool). */
+  /** Sequential pass over Settings whitelist only (no fallback to all F&O names). */
   private async scanDesks(): Promise<void> {
     if (!this.read) return;
     const names = await this.market.listFnoUnderlyings();
     const watch = await this.market.listWatchlist();
     const byKey = new Map(names.map((n) => [`${n.exchange.toUpperCase()}:${n.symbol.toUpperCase()}`, n]));
-    const fromWatch = watch
+    const pool = watch
       .map((w) => byKey.get(`${w.exchange.toUpperCase()}:${w.symbol.toUpperCase()}`))
-      .filter((n): n is FnoUnderlying => Boolean(n?.nextExpiry));
-    const pool = fromWatch.length ? fromWatch : deskScanPool(names);
-    if (!pool.length) return;
-    const batch = Math.min(SCAN_BATCH, pool.length);
-    this.training?.setTracked(pool.length, this.cursor);
+      .filter((n): n is FnoUnderlying => Boolean(n && n.nextExpiry));
+
+    if (!pool.length) {
+      this.training?.setTracked(0, 0);
+      this.training?.beginCycle("scan", 0, this.scanCycle, "No whitelist symbols");
+      this.training?.completeCycle("Add F&O symbols in Settings to start scanning");
+      return;
+    }
+
+    if (this.scanTotal !== pool.length || this.scanDone >= this.scanTotal) {
+      this.scanCycle += 1;
+      this.scanDone = 0;
+      this.scanTotal = pool.length;
+      this.cursor = 0;
+      this.training?.beginCycle("scan", pool.length, this.scanCycle);
+    }
+
+    const remaining = Math.max(0, pool.length - this.scanDone);
+    const batch = Math.min(SCAN_BATCH, remaining);
+    this.training?.setTracked(pool.length, this.scanDone);
     const deps = {
       db: this.db,
       market: this.market,
@@ -105,7 +136,12 @@ export class AgentLoop {
       forecastParams: this.forecastParams,
     };
     for (let i = 0; i < batch; i += 1) {
-      const desk = pool[(this.cursor + i) % pool.length]!;
+      const desk = pool[this.scanDone];
+      if (!desk?.exchange || !desk.symbol) {
+        this.scanDone += 1;
+        this.training?.setProgress(this.scanDone, this.scanTotal);
+        continue;
+      }
       try {
         const board = await buildOptionsBoard(deps, {
           exchange: desk.exchange,
@@ -132,8 +168,14 @@ export class AgentLoop {
         });
         this.log.warn({ err, symbol: desk.symbol }, "desk board scan failed");
       }
+      this.scanDone += 1;
+      this.training?.setProgress(this.scanDone, this.scanTotal);
     }
-    this.cursor = (this.cursor + batch) % pool.length;
+    this.cursor = this.scanDone % pool.length;
+    this.training?.setTracked(pool.length, this.cursor);
+    if (this.scanDone >= this.scanTotal) {
+      this.training?.completeCycle(`Scan cycle #${this.scanCycle} complete — next pass starts on the next tick`);
+    }
   }
 
   private async scanStocks(): Promise<void> {

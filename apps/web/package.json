@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "NODE_ENV=production next start -H 127.0.0.1 -p 3456",
     "watch": "next dev -H 127.0.0.1 -p 3456",
-    "build": "next build",
-    "start": "NODE_ENV=production next start -H 127.0.0.1 -p 3456",
+    "build": "next build && bash ../../scripts/prepare-web-standalone.sh",
+    "start": "cd .next/standalone && NODE_ENV=production HOSTNAME=127.0.0.1 PORT=3456 node apps/web/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

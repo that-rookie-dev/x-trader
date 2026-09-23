@@ -90,8 +90,8 @@ export function TrackedSymbolsPanel() {
         <span className="badge ok">{items.length} live</span>
       </div>
       <p className="muted">
-        Background desk scans these underlyings while the market is open — predictions, chain tape, and
-        post-close training run in parallel. Options page still focuses on one selected name.
+        Only these underlyings are scanned and trained in the background. Options page stays one-symbol.
+        Removing a name hides it from Training KPIs; local history is kept for later.
       </p>
       {msg ? <p className="down">{msg}</p> : null}
       <div className="row" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>

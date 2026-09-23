@@ -22,6 +22,14 @@ type Desk = {
       reason: string;
       mae?: number | null;
     }>;
+    progress: {
+      kind: string;
+      cycle: number;
+      done: number;
+      total: number;
+      pct: number;
+      label: string;
+    };
   };
   kpis: {
     trackedSymbols: number;
@@ -35,6 +43,8 @@ type Desk = {
     candleBars: number;
     quoteCacheRows: number;
     estimatedLedgerKb: number;
+    archivedSymbols?: number;
+    archivedPredictions?: number;
   };
   symbols: Array<{
     exchange: string;
@@ -101,21 +111,42 @@ export default function TrainingPage() {
       <PageHeader
         kicker="Learning loop"
         title="Training"
-        lede="Watch batch scans and post-close auto-tune across tracked symbols. KPIs grow as you supply daily market data."
+        lede="Whitelist-only from Settings. While the market is open, each scan cycle fills 0→100% then restarts. After close, one tune cycle runs and stays at 100% until the next session."
       />
       {error ? <p className="down">{error}</p> : null}
 
-      <div className="grid kpis">
+      <div className="card train-progress-card">
+        <div className="section-head">
+          <h2>Cycle progress</h2>
+          <span className="mono">{live?.progress?.pct ?? 0}%</span>
+        </div>
+        <div className="train-progress" role="progressbar" aria-valuenow={live?.progress?.pct ?? 0} aria-valuemin={0} aria-valuemax={100}>
+          <div className="train-progress-fill" style={{ width: `${Math.min(100, Math.max(0, live?.progress?.pct ?? 0))}%` }} />
+        </div>
+        <p className="muted" style={{ marginTop: 8 }}>
+          {live?.progress?.label ?? "Idle"}
+          {live?.progress?.total ? ` · ${live.progress.done}/${live.progress.total}` : ""}
+          {live?.message ? ` — ${live.message}` : ""}
+        </p>
+        <p className="muted" style={{ marginTop: 4, fontSize: "var(--fs-kicker)" }}>
+          {live?.marketOpen
+            ? "Market open: scan cycles repeat (bar resets each pass) until 15:30 IST."
+            : "Market closed: one tune cycle per session, then idle at 100% until tomorrow."}
+        </p>
+      </div>
+
+      <div className="grid kpis" style={{ marginTop: 12 }}>
         <div className="card kpi">
           <div className="label">Phase</div>
           <div className="value">{live?.phase ?? "—"}</div>
           <div className="muted">{live?.marketOpen ? "Market open" : "Market closed / off hours"}</div>
         </div>
         <div className="card kpi">
-          <div className="label">Tracked</div>
+          <div className="label">Whitelist</div>
           <div className="value">{k?.trackedSymbols ?? "—"}</div>
           <div className="muted">
-            pool {live?.trackedCount ?? 0} · cursor {live?.cursor ?? 0}
+            cycle #{live?.progress?.cycle ?? 0}
+            {(k?.archivedSymbols ?? 0) > 0 ? ` · ${k?.archivedSymbols} archived` : ""}
           </div>
         </div>
         <div className="card kpi">
@@ -154,12 +185,12 @@ export default function TrainingPage() {
         </div>
       </div>
 
-      {live?.message ? <p className="muted" style={{ marginTop: 10 }}>{live.message}</p> : null}
+      {live?.message && !live?.progress ? <p className="muted" style={{ marginTop: 10 }}>{live.message}</p> : null}
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="section-head">
           <h2>Batch activity</h2>
-          <span className="muted">Recent board scans + tune outcomes</span>
+          <span className="muted">Whitelist only</span>
         </div>
         <div className="train-split">
           <div>
@@ -199,7 +230,7 @@ export default function TrainingPage() {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="section-head">
           <h2>Per-symbol ledger</h2>
-          <span className="muted">Data points + equation health</span>
+          <span className="muted">Whitelist only — removed symbols stay in local DB</span>
         </div>
         {!desk?.symbols.length ? (
           <p className="muted">No prediction rows yet — keep the desk running through the session.</p>

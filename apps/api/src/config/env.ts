@@ -26,6 +26,8 @@ export const envSchema = z.object({
   EMBEDDED_POSTGRES_PORT: z.coerce.number().int().positive().default(54329),
   EMBEDDED_POSTGRES_PASSWORD: z.string().default("xtrader"),
   DATA_DIR: z.string().optional(),
+  /** GitHub owner/repo for release update checks. */
+  UPDATE_REPO: z.string().default("that-rookie-dev/x-trader"),
   /** Ignored legacy keys — accepted so old .env files still boot. */
   EXECUTION_MODE: z.string().optional(),
   AGENT_MODE: z.string().optional(),
