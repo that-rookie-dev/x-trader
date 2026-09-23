@@ -8,6 +8,8 @@ import { showDec } from "@/lib/format";
 import { sessionPhase, sessionPhaseLabel, type SessionPhase } from "@/lib/session";
 import { Coach, readSeen, tourForPath } from "@/components/Coach";
 import { SetupCredentials } from "@/components/SetupCredentials";
+import { SetupLlm } from "@/components/SetupLlm";
+import { SetupZerodha } from "@/components/SetupZerodha";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { VectorAtmosphere } from "@/components/VectorAtmosphere";
 
@@ -32,6 +34,7 @@ type Bootstrap = {
   locked?: boolean;
   needsReconnect?: boolean;
   needsCredentials?: boolean;
+  hasAiProfile?: boolean;
   kite?: KiteStatus;
   broker: { status: string; clientId?: string };
   settings: {
@@ -53,6 +56,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tour, setTour] = useState<string | null>(null);
+  const [askLlm, setAskLlm] = useState(false);
+
+  const ONBOARD_KEY = "xtrader-onboarding";
 
   useEffect(() => {
     const stored = localStorage.getItem("xtrader-theme");
@@ -105,14 +111,35 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!boot || typeof window === "undefined") return;
+    const step = window.localStorage.getItem(ONBOARD_KEY);
+    if (boot.needsCredentials) return;
+    if (!boot.authenticated) return;
+    if (boot.hasAiProfile) {
+      window.localStorage.setItem(ONBOARD_KEY, "done");
+      setAskLlm(false);
+      return;
+    }
+    if (step === "keys" || step === "llm") {
+      window.localStorage.setItem(ONBOARD_KEY, "llm");
+      setAskLlm(true);
+      return;
+    }
+    if (!step) {
+      window.localStorage.setItem(ONBOARD_KEY, "done");
+      setAskLlm(false);
+    }
+  }, [boot]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
-    if (boot?.needsCredentials) return;
+    if (boot?.needsCredentials || !boot?.authenticated || askLlm) return;
     const name = tourForPath(path);
     if (!readSeen()[name]) {
       const id = window.setTimeout(() => setTour(name), 600);
       return () => window.clearTimeout(id);
     }
-  }, [path, boot?.needsCredentials]);
+  }, [path, boot?.needsCredentials, boot?.authenticated, askLlm]);
 
   async function connect() {
     try {
@@ -191,8 +218,44 @@ export function Shell({ children }: { children: React.ReactNode }) {
     return (
       <SetupCredentials
         onSaved={() => {
+          window.localStorage.setItem(ONBOARD_KEY, "keys");
           setBoot(null);
           window.location.reload();
+        }}
+      />
+    );
+  }
+
+  if (boot && !boot.authenticated) {
+    return (
+      <SetupZerodha
+        linked={boot.linked}
+        error={error}
+        onConnect={() => void connect()}
+      />
+    );
+  }
+
+  if (boot && askLlm && !boot.hasAiProfile) {
+    return (
+      <SetupLlm
+        onDone={() => {
+          window.localStorage.setItem(ONBOARD_KEY, "done");
+          setAskLlm(false);
+          setBoot((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  hasAiProfile: true,
+                  settings: { ...prev.settings, predictionMode: "AI" },
+                }
+              : prev,
+          );
+        }}
+        onSkip={() => {
+          window.localStorage.setItem(ONBOARD_KEY, "done");
+          setAskLlm(false);
+          void setPredictionMode("ALGO");
         }}
       />
     );
@@ -260,7 +323,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               className={boot?.settings.predictionMode === "AI" ? "on" : ""}
-              title="Use AI equation (algo ⊕ AI delta)"
+              title={
+                boot?.hasAiProfile
+                  ? "Use AI equation (algo ⊕ AI delta)"
+                  : "Add an LLM in Settings to enable AI"
+              }
+              disabled={!boot?.hasAiProfile}
               onClick={() => void setPredictionMode("AI")}
             >
               AI
@@ -311,25 +379,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </header>
         <div className="content">
           <UpdateBanner />
-          {boot && !boot.authenticated ? (
-            <div className="card gate-card">
-              <p className="eyebrow">
-                <span className="eyebrow-dot" aria-hidden="true" />
-                Session
-              </p>
-              <h2>{boot.linked ? "Link expired" : "Connect to continue"}</h2>
-              <p className="muted">
-                {boot.linked
-                  ? "Re-authenticate with the same Zerodha account so the desk can read live prices and your book."
-                  : "Link Zerodha once. xTrader stays read-only — every order still happens in the Zerodha app."}
-              </p>
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn primary" data-coach="connect" onClick={() => void connect()}>
-                  {boot.linked ? "Reconnect Zerodha" : "Connect Zerodha"}
-                </button>
-              </div>
-            </div>
-          ) : null}
           {children}
         </div>
       </div>

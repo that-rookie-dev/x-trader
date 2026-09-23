@@ -95,7 +95,7 @@ export function SetupCredentials({ redirectHint, onSaved }: Props) {
             <span>Analysis terminal · read-only</span>
           </div>
         </div>
-        <span className="badge ok">AES-GCM VAULT</span>
+        <span className="badge ok">STEP 1 OF 3</span>
       </header>
 
       <main className="creds-stage">

@@ -86,6 +86,7 @@ export type OptionsBoard = {
   eodAi?: { close: string; low: string; high: string; note: string };
   activeClose?: string | number | null;
   predictionMode?: "ALGO" | "AI";
+  aiReady?: boolean;
   learning?: {
     algo: { mae: number | null; hitRate: number | null; lastTuned: string | null; delta: Record<string, number> };
     ai: { mae: number | null; hitRate: number | null; lastTuned: string | null; delta: Record<string, number> };

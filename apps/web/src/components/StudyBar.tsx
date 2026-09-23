@@ -48,6 +48,7 @@ export function StudyBar({
   aiConfidence,
   aiDirection,
   studying,
+  aiReady = true,
   onStudy,
   predScore,
   predictionMode = "ALGO",
@@ -67,6 +68,7 @@ export function StudyBar({
   aiConfidence?: number | null;
   aiDirection?: string | null;
   studying: boolean;
+  aiReady?: boolean;
   onStudy: () => void;
   predScore?: PredScore | null;
   predictionMode?: "ALGO" | "AI";
@@ -166,7 +168,8 @@ export function StudyBar({
         type="button"
         className="btn primary sb-go"
         data-coach="study"
-        disabled={studying}
+        disabled={studying || !aiReady}
+        title={aiReady ? undefined : "Add an LLM in Settings to run AI study"}
         onClick={onStudy}
       >
         <VectorSpark />

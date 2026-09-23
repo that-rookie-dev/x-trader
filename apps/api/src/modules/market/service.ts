@@ -11,15 +11,6 @@ import type { KiteCredentialsVault } from "../brokers/zerodha/credentials-vault.
 import { KiteTicker } from "kiteconnect";
 import { collectFnoNames, INDEX_FNO_ORDER, spotRefForUnderlying, underlyingFnoName } from "../forecast/levels.js";
 
-const DEFAULT_WATCH = [
-  { exchange: "NSE", symbol: "NIFTY 50", orderable: false },
-  { exchange: "NSE", symbol: "RELIANCE", orderable: true },
-  { exchange: "NSE", symbol: "HDFCBANK", orderable: true },
-  { exchange: "NSE", symbol: "ICICIBANK", orderable: true },
-  { exchange: "NSE", symbol: "INFY", orderable: true },
-  { exchange: "NSE", symbol: "TCS", orderable: true },
-];
-
 export class MarketDataService extends EventEmitter {
   private ticker: InstanceType<typeof KiteTicker> | null = null;
   private lastTick = new Map<string, Tick>();
@@ -45,7 +36,7 @@ export class MarketDataService extends EventEmitter {
 
   async listWatchlist() {
     const [wl] = await this.db.select().from(watchlists).limit(1);
-    if (!wl) return DEFAULT_WATCH.map((w) => ({ ...w, autoEnabled: false, lastPrice: null, ageMs: null, source: null }));
+    if (!wl) return [];
     const items = await this.db.select().from(watchlistItems).where(eq(watchlistItems.watchlistId, wl.id));
     const quotes = await this.db.select().from(quotesCache);
     const qmap = new Map(quotes.map((q) => [`${q.exchange}:${q.symbol}`, q]));

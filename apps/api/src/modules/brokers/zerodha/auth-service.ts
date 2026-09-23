@@ -12,7 +12,6 @@ import {
   riskProfiles,
   systemEvents,
   users,
-  watchlistItems,
   watchlists,
 } from "../../../db/schema.js";
 import type { CryptoService } from "../../../security/crypto.js";
@@ -275,16 +274,7 @@ export class ZerodhaAuthService {
       allowOptions: false,
       allowOvernight: false,
     });
-    const [watchlist] = await this.db.insert(watchlists).values({ userId, name: "Default" }).returning();
-    const defaults = [
-      { exchange: "NSE", symbol: "NIFTY 50", orderable: false, sortOrder: 0 },
-      { exchange: "NSE", symbol: "RELIANCE", orderable: true, sortOrder: 1 },
-      { exchange: "NSE", symbol: "HDFCBANK", orderable: true, sortOrder: 2 },
-      { exchange: "NSE", symbol: "ICICIBANK", orderable: true, sortOrder: 3 },
-      { exchange: "NSE", symbol: "INFY", orderable: true, sortOrder: 4 },
-      { exchange: "NSE", symbol: "TCS", orderable: true, sortOrder: 5 },
-    ];
-    await this.db.insert(watchlistItems).values(defaults.map((d) => ({ ...d, watchlistId: watchlist!.id })));
+    await this.db.insert(watchlists).values({ userId, name: "Default" });
     const [existingPaper] = await this.db.select().from(paperAccounts).limit(1);
     if (!existingPaper) {
       await this.db.insert(paperAccounts).values({ userId, cash: "25000.00", reservedCash: "0" });

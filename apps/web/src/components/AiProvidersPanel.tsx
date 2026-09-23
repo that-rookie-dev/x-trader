@@ -40,7 +40,12 @@ function localUrl(id: string, host: string, port: string) {
   return `http://${h}:${p}/v1`;
 }
 
-export function AiProvidersPanel() {
+type Props = {
+  variant?: "settings" | "setup";
+  onActivated?: () => void;
+};
+
+export function AiProvidersPanel({ variant = "settings", onActivated }: Props) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [profiles, setProfiles] = useState<AiProfile[]>([]);
   const [error, setError] = useState("");
@@ -195,6 +200,7 @@ export function AiProvidersPanel() {
     await confirmModel();
     setProfiles(await api<AiProfile[]>(`/api/ai/profiles/${picker.id}/activate`, { method: "POST", body: "{}" }));
     setPicker(null);
+    onActivated?.();
   }
 
   async function switchProfile(profile: AiProfile) {
@@ -208,6 +214,7 @@ export function AiProvidersPanel() {
       return;
     }
     setProfiles(await api<AiProfile[]>(`/api/ai/profiles/${profile.id}/activate`, { method: "POST", body: "{}" }));
+    onActivated?.();
   }
 
   async function deleteProfile(profile: AiProfile) {
@@ -273,9 +280,9 @@ export function AiProvidersPanel() {
   }
 
   return (
-    <div className="card">
+    <div className={variant === "setup" ? "setup-ai" : "card"}>
       <div className="section-head">
-        <h2>AI providers</h2>
+        <h2>{variant === "setup" ? "Provider" : "AI providers"}</h2>
         <button className="btn primary" onClick={openAdd}>
           Add profile
         </button>

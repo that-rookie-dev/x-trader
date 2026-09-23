@@ -42,6 +42,7 @@ export default function OptionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [lots, setLots] = useState(1);
+  const [flowMode, setFlowMode] = useState<"BUY" | "SELL">("BUY");
   const [studying, setStudying] = useState(false);
   const [stage, setStage] = useState<"chain" | "chart">("chain");
   const [traceOpen, setTraceOpen] = useState(false);
@@ -198,7 +199,7 @@ export default function OptionsPage() {
   const focusLeg = useMemo(() => findLeg(board, selected?.symbol ?? null), [board, selected]);
 
   async function runStudy() {
-    if (!symbol || studying) return;
+    if (!symbol || studying || !board?.aiReady) return;
     setStudying(true);
     setNote(null);
     setTraceOpen(true);
@@ -354,6 +355,7 @@ export default function OptionsPage() {
         aiConfidence={board?.ai?.confidence}
         aiDirection={board?.ai?.direction}
         studying={studying}
+        aiReady={Boolean(board?.aiReady)}
         onStudy={() => void runStudy()}
         predScore={predScore}
         predictionMode={board?.predictionMode ?? "ALGO"}
@@ -513,6 +515,8 @@ export default function OptionsPage() {
             kind={selected?.kind ?? "CE"}
             lots={lots}
             onLots={setLots}
+            mode={flowMode}
+            onMode={setFlowMode}
             board={board}
             onBusy={setNote}
           />
@@ -606,6 +610,8 @@ function PnlBox({
   kind,
   lots,
   onLots,
+  mode,
+  onMode,
   board,
   onBusy,
 }: {
@@ -613,21 +619,18 @@ function PnlBox({
   kind: string;
   lots: number;
   onLots: (n: number) => void;
+  mode: "BUY" | "SELL";
+  onMode: (mode: "BUY" | "SELL") => void;
   board: OptionsBoard | null;
   onBusy: (msg: string | null) => void;
 }) {
   const [paperPos, setPaperPos] = useState<{ id: string; direction: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"BUY" | "SELL">(() => (leg.mark === "SELL" ? "SELL" : "BUY"));
 
   useEffect(() => {
-    setMode(leg.mark === "SELL" ? "SELL" : "BUY");
-  }, [leg.symbol]);
-
-  useEffect(() => {
-    if (paperPos?.direction === "LONG") setMode("BUY");
-    else if (paperPos?.direction === "SHORT") setMode("SELL");
-  }, [paperPos?.direction]);
+    if (paperPos?.direction === "LONG") onMode("BUY");
+    else if (paperPos?.direction === "SHORT") onMode("SELL");
+  }, [paperPos?.direction, onMode]);
 
   useEffect(() => {
     let alive = true;
@@ -731,6 +734,8 @@ function PnlBox({
   busyRef.current = busy;
   const readyRef = useRef(ready);
   readyRef.current = ready;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   useEffect(() => {
     const typing = (el: EventTarget | null) => {
@@ -743,7 +748,7 @@ function PnlBox({
       if (e.key === "Shift" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (modeLockedRef.current || !readyRef.current) return;
         e.preventDefault();
-        setMode((m) => (m === "BUY" ? "SELL" : "BUY"));
+        onMode(modeRef.current === "BUY" ? "SELL" : "BUY");
         return;
       }
       if (e.key === "Enter" && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -791,7 +796,7 @@ function PnlBox({
               type="button"
               className={mode === "BUY" ? "on" : ""}
               disabled={modeLocked && mode !== "BUY"}
-              onClick={() => setMode("BUY")}
+              onClick={() => onMode("BUY")}
             >
               BUY
             </button>
@@ -799,7 +804,7 @@ function PnlBox({
               type="button"
               className={mode === "SELL" ? "on" : ""}
               disabled={modeLocked && mode !== "SELL"}
-              onClick={() => setMode("SELL")}
+              onClick={() => onMode("SELL")}
             >
               SELL
             </button>

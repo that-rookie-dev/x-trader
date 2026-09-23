@@ -63,7 +63,8 @@ export async function buildOptionsBoard(
   const supports = (forecast.path.supports ?? []).map(Number);
   const resistances = (forecast.path.resistances ?? []).map(Number);
   const settings = await s.gate.snapshot();
-  const predictionMode = settings.predictionMode === "AI" ? "AI" : "ALGO";
+  const aiReady = Boolean(settings.activeAiProfileId);
+  const predictionMode = settings.predictionMode === "AI" && aiReady ? "AI" : "ALGO";
   const fp = s.forecastParams ? await s.forecastParams.get(exchange, symbol) : null;
   const algoParams = fp?.algo.params;
   const aiParams = fp?.ai.params;
@@ -474,6 +475,7 @@ export async function buildOptionsBoard(
     eodAi: eodAiFormula,
     activeClose,
     predictionMode,
+    aiReady,
     levels: {
       supports: forecast.path.supports ?? [],
       resistances: forecast.path.resistances ?? [],

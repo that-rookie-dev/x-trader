@@ -66,12 +66,15 @@ export function registerRoutes(app: Express, s: AppServices): void {
       const broker = await s.auth.status();
       const settings = await s.gate.snapshot();
       const kite = await s.vault.status();
+      const profiles = await s.ai.list();
+      const hasAiProfile = profiles.some((p) => p.isActive && Boolean(p.modelId));
       res.json({
         linked,
         authenticated: Boolean(session),
         locked: false,
         needsReconnect: linked && !session,
         needsCredentials: !kite.configured,
+        hasAiProfile,
         kite,
         broker,
         settings: {
@@ -79,7 +82,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
           ordersEnabled: false,
           haltActive: settings.haltActive,
           paperAutopilot: settings.paperAutopilot,
-          predictionMode: settings.predictionMode,
+          predictionMode: hasAiProfile ? settings.predictionMode : "ALGO",
           paperCash: settings.paperCash,
           paperOpenCount: settings.paperOpenCount,
         },
@@ -339,6 +342,12 @@ export function registerRoutes(app: Express, s: AppServices): void {
     authOptional,
     asyncHandler(async (req, res) => {
       const body = z.object({ mode: z.enum(["ALGO", "AI"]) }).parse(req.body);
+      if (body.mode === "AI") {
+        const profiles = await s.ai.list();
+        if (!profiles.some((p) => p.isActive && Boolean(p.modelId))) {
+          throw new AppError("NO_AI_PROFILE", "Add and activate an LLM in Settings before using AI mode.", 422);
+        }
+      }
       const settings = await s.gate.patch({ predictionMode: body.mode });
       res.json(settings);
     }),
