@@ -44,13 +44,13 @@ banner() {
   if [[ "$FANCY" -eq 1 ]]; then
     printf '%s\n' "${C_GOLD}${C_BOLD}"
     cat <<'ASCII'
-   ╔══════════════════════════════════════════════════════╗
-   ║                                                      ║
-   ║   🐂  x T r a d e r   ·   O P E N I N G   B E L L   🐻  ║
-   ║                                                      ║
-   ║      ▲ NIFTY  ·  ₹ ₹ ₹  ·  tape rolling  ·  ▼ BANK   ║
-   ║                                                      ║
-   ╚══════════════════════════════════════════════════════╝
+   +======================================================+
+   |                                                      |
+   |     x T r a d e r   ·   O P E N I N G   B E L L      |
+   |                                                      |
+   |   ^ NIFTY  ·  $$$  ·  tape rolling  ·  v BANK        |
+   |                                                      |
+   +======================================================+
 ASCII
     printf '%s\n' "${C_RESET}${C_MUTED}  personal F&O desk · analysis only · never places orders${C_RESET}"
     echo
@@ -74,14 +74,14 @@ bar() {
 ticker_frame() {
   local n="$1"
   local frames=(
-    "🐂  BULLS   ▲ ▲ ▲   ₹₹₹   tape ↑  "
-    "  🐂 BULLS  ▲ ▲    ₹ ₹   tape ↑ "
-    "🐻  BEARS   ▼ ▼ ▼   ₹₹₹   tape ↓  "
-    "  🐻 BEARS  ▼ ▼    ₹ ₹   tape ↓ "
-    "💰  MONEY   $ $ $   ₹₹₹   fill…  "
-    "  💰 MONEY  ₹ ₹    $$$   fill… "
-    "📈  CANDLE  ▲┃▼    OHLC   print "
-    "  📉 CANDLE ┃▼▲    OHLC   print "
+    "BULLS  ^^^   $$$   tape up   "
+    "BULLS   ^^   $$    tape up   "
+    "BEARS  vvv   $$$   tape down "
+    "BEARS   vv   $$    tape down "
+    "MONEY  $$$   INR   fill...   "
+    "MONEY   $$   $$$   fill...   "
+    "CANDLE ^|v   OHLC  print     "
+    "CANDLE |v^   OHLC  print     "
   )
   printf '%s' "${frames[$((n % ${#frames[@]}))]}"
 }
@@ -127,16 +127,16 @@ finish_step() {
   stop_spin
   STEP=$((STEP + 1))
   local pct=$(( STEP * 100 / TOTAL_STEPS ))
-  local icon color
+  local tag color
   case "$tone" in
-    bear) icon="🐻"; color="$C_RED" ;;
-    gold) icon="💰"; color="$C_GOLD" ;;
-    *)    icon="🐂"; color="$C_GREEN" ;;
+    bear) tag="[BEAR]"; color="$C_RED" ;;
+    gold) tag="[$$$$]"; color="$C_GOLD" ;;
+    *)    tag="[BULL]"; color="$C_GREEN" ;;
   esac
   if [[ "$FANCY" -eq 1 ]]; then
     printf '%s[%s%s%s] %3d%%  %s %s%s%s\n' \
       "$C_MUTED" "$C_GREEN" "$(bar "$pct")" "$C_MUTED" "$pct" \
-      "$icon" "$color" "$label" "$C_RESET"
+      "$tag" "$color" "$label" "$C_RESET"
   else
     echo "[$STEP/$TOTAL_STEPS] $label"
   fi
@@ -144,7 +144,7 @@ finish_step() {
 
 die() {
   stop_spin
-  printf '%s\n' "${C_RED}${C_BOLD}✗ $1${C_RESET}" >&2
+  printf '%s\n' "${C_RED}${C_BOLD}ERROR: $1${C_RESET}" >&2
   shift || true
   for line in "$@"; do
     printf '%s\n' "${C_MUTED}  $line${C_RESET}" >&2
@@ -375,12 +375,12 @@ fi
 echo
 if [[ "$FANCY" -eq 1 ]]; then
   cat <<EOF
-${C_GREEN}${C_BOLD}   ▲ SETTLE  ·  INSTALL COMPLETE  ·  100%${C_RESET}
-${C_MUTED}   ────────────────────────────────────────${C_RESET}
-${C_GOLD}   💰  Open     ${C_BOLD}${C_CYAN}http://localhost:3456${C_RESET}
-${C_MUTED}   🐂  Home     ${PREFIX}${C_RESET}
-${C_MUTED}   🐻  CLI      ${PREFIX}/bin/xtrader start | update | session reset${C_RESET}
-${C_MUTED}   🧹  Remove   ${PREFIX}/uninstall.sh   (or curl uninstall.sh | bash)${C_RESET}
+${C_GREEN}${C_BOLD}   ^ SETTLE  ·  INSTALL COMPLETE  ·  100%${C_RESET}
+${C_MUTED}   ----------------------------------------${C_RESET}
+${C_GOLD}   Open     ${C_BOLD}${C_CYAN}http://localhost:3456${C_RESET}
+${C_MUTED}   Home     ${PREFIX}${C_RESET}
+${C_MUTED}   CLI      ${PREFIX}/bin/xtrader start | update | session reset${C_RESET}
+${C_MUTED}   Remove   ${PREFIX}/uninstall.sh   (or curl uninstall.sh | bash)${C_RESET}
 
 ${C_DIM}   First tick: paste Kite API key + secret in the UI.
    Redirect URL in Kite Connect:

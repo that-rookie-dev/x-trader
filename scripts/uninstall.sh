@@ -26,10 +26,10 @@ banner() {
   if [[ "$FANCY" -eq 1 ]]; then
     printf '%s\n' "${C_RED}${C_BOLD}"
     cat <<'ASCII'
-   ╔══════════════════════════════════════════════════════╗
-   ║   🐻  x T r a d e r   ·   C L O S I N G   B E L L   🐻  ║
-   ║      unwind positions · clear vault · leave floor    ║
-   ╚══════════════════════════════════════════════════════╝
+   +======================================================+
+   |     x T r a d e r   ·   C L O S I N G   B E L L      |
+   |      unwind positions · clear vault · leave floor    |
+   +======================================================+
 ASCII
     printf '%s\n' "${C_RESET}"
   else
@@ -150,7 +150,7 @@ rm -f /tmp/xtrader*.log 2>/dev/null || true
 echo
 if [[ "$FANCY" -eq 1 ]]; then
   cat <<EOF
-${C_GREEN}${C_BOLD}   ▼ CLOSED  ·  UNINSTALL COMPLETE${C_RESET}
+${C_GREEN}${C_BOLD}   v CLOSED  ·  UNINSTALL COMPLETE${C_RESET}
 ${C_MUTED}   App, vault, and local market data are gone.
    Re-enter anytime:${C_RESET}
 ${C_GOLD}   curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash${C_RESET}
