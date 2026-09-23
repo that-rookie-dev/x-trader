@@ -27,9 +27,9 @@ The script:
 1. Detects `linux-x64`, `linux-arm64`, `darwin-arm64`, or `darwin-x64`
 2. Unpacks into `$HOME/.xtrader` (override with `XTRADER_HOME`)
 3. Writes `.env` if missing (session + encryption secrets only — no Kite keys in the file)
-4. Installs a systemd user unit (Linux) or launchd agent (macOS), or starts in the background
-5. Starts **API + web UI** via `bin/xtrader start`
-6. Prints **http://localhost:3456**
+4. Installs a systemd user unit (Linux) or launchd agent (macOS)
+5. **Auto-starts** API + web UI and waits until http://localhost:3456 answers
+6. Opens the desk in your default browser when ready
 
 On first open, xTrader shows a credentials screen. Paste your Kite Connect API key and secret; they are encrypted with AES-GCM in the local database. Revoke them later from **Settings**.
 
@@ -45,9 +45,20 @@ Bind address defaults to `127.0.0.1`. For a VPS, set `APP_BIND=0.0.0.0` (and mat
 ~/.xtrader/bin/xtrader start           # API (:4000) + UI (:3456) + bundled Postgres
 ~/.xtrader/bin/xtrader update          # download latest release and restart
 ~/.xtrader/bin/xtrader session reset   # revoke cookies / expire broker sessions
+~/.xtrader/uninstall.sh                # stop services + delete app and all data
 ```
 
 When a newer GitHub Release exists, the UI shows an **Update available** banner. **Update & restart** runs the same self-update path (preserves `.env` and `var/`), then brings the desk back up.
+
+## Uninstall
+
+Wipes the install directory (app binaries, Postgres data, paper wallet, encrypted Kite vault, logs) and removes launchd/systemd units:
+
+```bash
+curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
+```
+
+Or run `~/.xtrader/uninstall.sh`. Non-interactive: `XTRADER_UNINSTALL_YES=1 bash uninstall.sh`.
 ## Recover a session
 
 Click **Reconnect Zerodha** in the UI. Only the same linked client is accepted. To wipe cookies and expire broker sessions on the server:

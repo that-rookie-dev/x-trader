@@ -10,7 +10,7 @@ Requires **Node.js 20.11+**. No Docker — PostgreSQL is bundled.
 curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash
 ```
 
-Then open **http://localhost:3456**. On first load, paste your Kite Connect API key and secret (stored encrypted locally).
+The installer **starts the desk automatically** and opens **http://localhost:3456** when it’s ready. On first load, paste your Kite Connect API key and secret (stored encrypted locally).
 
 In the [Kite Connect](https://developers.kite.zerodha.com/apps) app, set Redirect URL exactly to:
 
@@ -27,6 +27,16 @@ Full notes, upgrades, and session recovery: [docs/install.md](docs/install.md).
 ```
 
 The UI also shows an update banner when a newer release is published.
+
+## Uninstall
+
+Removes the app, launch agent/systemd unit, and **all local data** (`~/.xtrader` including Postgres + vault):
+
+```bash
+curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/uninstall.sh | bash
+# or: ~/.xtrader/uninstall.sh
+# non-interactive: XTRADER_UNINSTALL_YES=1 bash uninstall.sh
+```
 ## Run from source
 
 ```bash
@@ -65,4 +75,4 @@ npm run cli -- session reset
 - `apps/api` — Express desk runtime + CLI
 - `apps/web` — Next.js dashboard (standalone)
 - `packages/domain` — shared contracts
-- `scripts/install.sh` / `pack-release.sh` — GitHub Release bundle
+- `scripts/install.sh` / `uninstall.sh` / `pack-release.sh` — GitHub Release bundle

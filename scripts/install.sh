@@ -253,6 +253,23 @@ fi
 # ── service / start ──────────────────────────────────────────────────────────
 start_spin "ringing the opening bell…"
 started=0
+start_via_nohup() {
+  mkdir -p "$PREFIX/var"
+  # stop a previous background pid if present
+  if [[ -f "$PREFIX/var/xtrader.pid" ]]; then
+    old="$(cat "$PREFIX/var/xtrader.pid" 2>/dev/null || true)"
+    if [[ -n "${old:-}" ]]; then
+      kill -TERM "$old" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$old" 2>/dev/null || true
+    fi
+  fi
+  nohup env XTRADER_HOME="$PREFIX" DATA_DIR="$PREFIX/var" "$PREFIX/bin/xtrader" start \
+    >"$PREFIX/var/xtrader.log" 2>&1 &
+  echo $! >"$PREFIX/var/xtrader.pid"
+  started=1
+}
+
 if [[ "$os" == "linux" ]] && command -v systemctl >/dev/null; then
   mkdir -p "$HOME/.config/systemd/user"
   cat > "$HOME/.config/systemd/user/xtrader.service" <<EOF
@@ -297,23 +314,24 @@ elif [[ "$os" == "darwin" ]]; then
   <key>StandardErrorPath</key><string>$PREFIX/var/launchd.err.log</string>
 </dict></plist>
 EOF
-  launchctl bootout "gui/$(id -u)/com.xtrader.app" 2>/dev/null || true
-  if launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null || launchctl load -w "$plist" 2>/dev/null; then
+  uid="$(id -u)"
+  launchctl bootout "gui/${uid}/com.xtrader.app" 2>/dev/null || true
+  if launchctl bootstrap "gui/${uid}" "$plist" 2>/dev/null || launchctl load -w "$plist" 2>/dev/null; then
     started=1
+    launchctl kickstart -k "gui/${uid}/com.xtrader.app" 2>/dev/null || true
   fi
 fi
 
+# Always ensure a running process — service helpers sometimes no-op in restricted shells.
 if [[ "$started" -eq 0 ]]; then
-  nohup "$PREFIX/bin/xtrader" start >"$PREFIX/var/xtrader.log" 2>&1 &
-  echo $! >"$PREFIX/var/xtrader.pid"
-  started=1
+  start_via_nohup
 fi
 finish_step "Opening bell — desk process started" "bull"
 
 # ── warm-up poll ─────────────────────────────────────────────────────────────
 start_spin "waiting for first print on :3456…"
 warm=0
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+for _ in $(seq 1 45); do
   if curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:3456/" 2>/dev/null \
     || curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:4000/api/health" 2>/dev/null; then
     warm=1
@@ -321,10 +339,36 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   fi
   sleep 1
 done
+
+# If launchd/systemd claimed start but nothing answers, fall back to nohup.
+if [[ "$warm" -eq 0 ]]; then
+  start_via_nohup
+  for _ in $(seq 1 30); do
+    if curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:3456/" 2>/dev/null \
+      || curl -fsS -o /dev/null --connect-timeout 1 "http://127.0.0.1:4000/api/health" 2>/dev/null; then
+      warm=1
+      break
+    fi
+    sleep 1
+  done
+fi
+
 if [[ "$warm" -eq 1 ]]; then
   finish_step "Market open — UI responding" "bull"
+  # Auto-open the desk in the default browser
+  if command -v open >/dev/null; then
+    open "http://localhost:3456" >/dev/null 2>&1 || true
+  elif command -v xdg-open >/dev/null; then
+    xdg-open "http://localhost:3456" >/dev/null 2>&1 || true
+  fi
 else
-  finish_step "Desk booting in background (give it a few seconds)" "bear"
+  finish_step "Desk still booting — open http://localhost:3456 shortly" "bear"
+fi
+
+# Keep a local uninstall helper next to the install
+if [[ -f "$PREFIX/scripts/uninstall.sh" ]]; then
+  ln -sf "$PREFIX/scripts/uninstall.sh" "$PREFIX/uninstall.sh" 2>/dev/null || cp "$PREFIX/scripts/uninstall.sh" "$PREFIX/uninstall.sh"
+  chmod +x "$PREFIX/uninstall.sh" "$PREFIX/scripts/uninstall.sh" 2>/dev/null || true
 fi
 
 # ── closing print ────────────────────────────────────────────────────────────
@@ -336,6 +380,7 @@ ${C_MUTED}   ──────────────────────�
 ${C_GOLD}   💰  Open     ${C_BOLD}${C_CYAN}http://localhost:3456${C_RESET}
 ${C_MUTED}   🐂  Home     ${PREFIX}${C_RESET}
 ${C_MUTED}   🐻  CLI      ${PREFIX}/bin/xtrader start | update | session reset${C_RESET}
+${C_MUTED}   🧹  Remove   ${PREFIX}/uninstall.sh   (or curl uninstall.sh | bash)${C_RESET}
 
 ${C_DIM}   First tick: paste Kite API key + secret in the UI.
    Redirect URL in Kite Connect:
@@ -347,4 +392,5 @@ else
   echo "On first load, enter your Zerodha Kite API key and secret."
   echo "In the Kite app, set redirect URL to: http://localhost:3456/zerodha/callback"
   echo "CLI: $PREFIX/bin/xtrader start | update | session reset"
+  echo "Uninstall: $PREFIX/uninstall.sh"
 fi

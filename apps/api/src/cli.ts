@@ -35,6 +35,7 @@ async function run() {
     console.log(`xTrader CLI
   xtrader start           Start API + web UI (bundled Postgres)
   xtrader update          Download latest release and restart (bundle installs)
+  xtrader uninstall       Stop services and delete app + all local data
   xtrader session reset   Revoke app cookies and expire broker sessions
 `);
     return;
@@ -46,6 +47,23 @@ async function run() {
       console.log("xTrader sessions reset. Reconnect Zerodha from the UI.");
     });
     return;
+  }
+  if (cmd === "uninstall") {
+    const { existsSync } = await import("node:fs");
+    const { spawn } = await import("node:child_process");
+    const root = process.env.XTRADER_HOME?.trim() || process.cwd();
+    const script =
+      [resolve(root, "uninstall.sh"), resolve(root, "scripts/uninstall.sh")].find((p) => existsSync(p)) ?? null;
+    if (!script) {
+      console.error("uninstall.sh not found — use the release uninstall script from GitHub.");
+      process.exit(1);
+    }
+    const child = spawn("bash", [script], {
+      stdio: "inherit",
+      env: { ...process.env, XTRADER_HOME: root, XTRADER_UNINSTALL_YES: sub === "--yes" || sub === "-y" ? "1" : process.env.XTRADER_UNINSTALL_YES },
+    });
+    const code = await new Promise<number>((resolveCode) => child.on("exit", (c) => resolveCode(c ?? 1)));
+    process.exit(code);
   }
   if (cmd === "update") {
     const { UpdateService } = await import("./modules/update/service.js");
@@ -65,6 +83,7 @@ async function run() {
   console.log(`xTrader CLI
   xtrader start           Start API + web UI (bundled Postgres)
   xtrader update          Download latest release and restart (bundle installs)
+  xtrader uninstall       Stop services and delete app + all local data
   xtrader session reset   Revoke app cookies and expire broker sessions
 `);
 }

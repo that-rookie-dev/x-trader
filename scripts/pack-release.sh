@@ -35,10 +35,11 @@ cp package.json "$OUT/"
 [[ -f package-lock.json ]] && cp package-lock.json "$OUT/"
 cp .env.example "$OUT/"
 cp scripts/install.sh "$OUT/install.sh"
+cp scripts/uninstall.sh "$OUT/uninstall.sh"
 
 mkdir -p "$OUT/scripts"
-cp scripts/self-update.sh scripts/install.sh scripts/prepare-web-standalone.sh "$OUT/scripts/"
-chmod +x "$OUT/scripts/"*.sh
+cp scripts/self-update.sh scripts/install.sh scripts/uninstall.sh scripts/prepare-web-standalone.sh "$OUT/scripts/"
+chmod +x "$OUT/scripts/"*.sh "$OUT/uninstall.sh"
 
 # Semver stamped into the install (CI tag preferred)
 VER="${GITHUB_REF_NAME:-}"
@@ -66,7 +67,7 @@ export DATA_DIR="${DATA_DIR:-$ROOT/var}"
 export XTRADER_HOME="${XTRADER_HOME:-$ROOT}"
 exec node "$ROOT/apps/api/dist/cli.js" "$@"
 EOF
-chmod +x "$OUT/bin/xtrader" "$OUT/install.sh" "$OUT/scripts/self-update.sh"
+chmod +x "$OUT/bin/xtrader" "$OUT/install.sh" "$OUT/uninstall.sh" "$OUT/scripts/self-update.sh" "$OUT/scripts/uninstall.sh"
 
 TARBALL="xtrader-${PLATFORM}.tar.gz"
 tar -czf "$TARBALL" -C "$OUT" .

@@ -40,15 +40,17 @@ jobs:
       - run: npm run build
       - name: Pack release tarball
         run: |
-          chmod +x scripts/prepare-web-standalone.sh scripts/pack-release.sh scripts/install.sh scripts/self-update.sh
+          chmod +x scripts/prepare-web-standalone.sh scripts/pack-release.sh scripts/install.sh scripts/uninstall.sh scripts/self-update.sh
           bash scripts/pack-release.sh "${{ matrix.platform }}"
           cp scripts/install.sh install.sh
+          cp scripts/uninstall.sh uninstall.sh
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           files: |
             xtrader-${{ matrix.platform }}.tar.gz
             install.sh
+            uninstall.sh
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
