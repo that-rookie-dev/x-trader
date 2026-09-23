@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   numeric,
@@ -148,12 +149,17 @@ export const appSettings = pgTable("app_settings", {
   agentMode: text("agent_mode").notNull().default("COPILOT"),
   liveTradingEnabled: boolean("live_trading_enabled").notNull().default(false),
   autonomousTradingEnabled: boolean("autonomous_trading_enabled").notNull().default(false),
+  paperAutopilot: boolean("paper_autopilot").notNull().default(false),
+  predictionMode: text("prediction_mode").notNull().default("ALGO"),
   confirmedEgressIp: text("confirmed_egress_ip"),
   confirmedEgressAt: timestamp("confirmed_egress_at", { withTimezone: true }),
   haltActive: boolean("halt_active").notNull().default(false),
   haltPolicy: text("halt_policy").notNull().default("MAINTAIN"),
   haltReason: text("halt_reason"),
   activeAiProfileId: uuid("active_ai_profile_id"),
+  kiteApiKeyEnc: jsonb("kite_api_key_enc").$type<Record<string, unknown>>(),
+  kiteApiSecretEnc: jsonb("kite_api_secret_enc").$type<Record<string, unknown>>(),
+  kiteConfiguredAt: timestamp("kite_configured_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -302,6 +308,7 @@ export const positions = pgTable("positions", {
   fees: numeric("fees", { precision: 18, scale: 4 }).notNull().default("0"),
   status: text("status").notNull().default("OPEN"),
   closeReason: text("close_reason"),
+  meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
 });
@@ -485,4 +492,59 @@ export const volHistory = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("vol_history_day").on(t.symbol, t.sessionDate)],
+);
+
+export const predictionLedger = pgTable(
+  "prediction_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    exchange: text("exchange").notNull(),
+    symbol: text("symbol").notNull(),
+    expiry: text("expiry"),
+    sessionDate: text("session_date").notNull(),
+    predictedAt: timestamp("predicted_at", { withTimezone: true }).notNull().defaultNow(),
+    predictedClose: numeric("predicted_close", { precision: 18, scale: 4 }),
+    predictedPremium: numeric("predicted_premium", { precision: 18, scale: 4 }),
+    predictedDirection: text("predicted_direction"),
+    entryPrice: numeric("entry_price", { precision: 18, scale: 4 }),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    actualAt: timestamp("actual_at", { withTimezone: true }),
+    actualClose: numeric("actual_close", { precision: 18, scale: 4 }),
+    actualPremium: numeric("actual_premium", { precision: 18, scale: 4 }),
+    actualPnl: numeric("actual_pnl", { precision: 18, scale: 4 }),
+    errorAbs: numeric("error_abs", { precision: 18, scale: 6 }),
+    errorPct: numeric("error_pct", { precision: 12, scale: 6 }),
+    directionHit: boolean("direction_hit"),
+    sourceRef: text("source_ref"),
+    status: text("status").notNull().default("OPEN"),
+  },
+  (t) => [
+    uniqueIndex("prediction_ledger_day_kind").on(t.kind, t.exchange, t.symbol, t.sessionDate),
+    index("prediction_ledger_status").on(t.status, t.sessionDate),
+  ],
+);
+
+export const forecastParams = pgTable(
+  "forecast_params",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    exchange: text("exchange").notNull(),
+    symbol: text("symbol").notNull(),
+    version: integer("version").notNull().default(1),
+    algoParams: jsonb("algo_params").$type<Record<string, number>>().notNull(),
+    algoDelta: jsonb("algo_delta").$type<Record<string, number>>().notNull().default({}),
+    algoScoreMae: numeric("algo_score_mae", { precision: 12, scale: 6 }),
+    algoScoreHitRate: numeric("algo_score_hit_rate", { precision: 8, scale: 4 }),
+    algoHistory: jsonb("algo_history").$type<Array<Record<string, unknown>>>().notNull().default([]),
+    algoLastTunedSession: text("algo_last_tuned_session"),
+    aiParams: jsonb("ai_params").$type<Record<string, number>>().notNull(),
+    aiDelta: jsonb("ai_delta").$type<Record<string, number>>().notNull().default({}),
+    aiScoreMae: numeric("ai_score_mae", { precision: 12, scale: 6 }),
+    aiScoreHitRate: numeric("ai_score_hit_rate", { precision: 8, scale: 4 }),
+    aiHistory: jsonb("ai_history").$type<Array<Record<string, unknown>>>().notNull().default([]),
+    aiLastTunedSession: text("ai_last_tuned_session"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("forecast_params_symbol").on(t.exchange, t.symbol)],
 );

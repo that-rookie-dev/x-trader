@@ -13,6 +13,7 @@ import {
 import { compareEod, predictEodSpot, viewAiStudy } from "../modules/forecast/eod.js";
 import { pickExpiringDesk } from "../modules/forecast/levels.js";
 import { buildOptionsBoard } from "../modules/forecast/board.js";
+import { marketBlocksPaper } from "../modules/forecast/chain-tape.js";
 
 export function registerRoutes(app: Express, s: AppServices): void {
   app.get("/api/health", (_req, res) => {
@@ -34,16 +35,23 @@ export function registerRoutes(app: Express, s: AppServices): void {
       const linked = await s.sessions.instanceLinked();
       const broker = await s.auth.status();
       const settings = await s.gate.snapshot();
+      const kite = await s.vault.status();
       res.json({
         linked,
         authenticated: Boolean(session),
         locked: false,
         needsReconnect: linked && !session,
+        needsCredentials: !kite.configured,
+        kite,
         broker,
         settings: {
           deskMode: settings.deskMode,
           ordersEnabled: false,
           haltActive: settings.haltActive,
+          paperAutopilot: settings.paperAutopilot,
+          predictionMode: settings.predictionMode,
+          paperCash: settings.paperCash,
+          paperOpenCount: settings.paperOpenCount,
         },
       });
     }),
@@ -85,6 +93,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
   );
 
   const auth = s.sessions.middleware("required");
+  const authOptional = s.sessions.middleware("optional");
 
   app.get(
     "/api/account/profile",
@@ -125,13 +134,14 @@ export function registerRoutes(app: Express, s: AppServices): void {
 
   app.post(
     "/api/market/watchlist",
-    auth,
+    authOptional,
     asyncHandler(async (req, res) => {
       const body = z
         .object({
           exchange: z.string().default("NSE"),
           symbol: z.string().min(1),
           orderable: z.boolean().optional(),
+          autoEnabled: z.boolean().optional(),
         })
         .parse(req.body);
       res.json(await s.market.addWatchItem(body));
@@ -140,7 +150,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
 
   app.post(
     "/api/market/watchlist/remove",
-    auth,
+    authOptional,
     asyncHandler(async (req, res) => {
       const body = z.object({ exchange: z.string(), symbol: z.string() }).parse(req.body);
       res.json(await s.market.removeWatchItem(body.exchange, body.symbol));
@@ -149,7 +159,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
 
   app.post(
     "/api/market/watchlist/auto",
-    auth,
+    authOptional,
     asyncHandler(async (req, res) => {
       const body = z
         .object({ exchange: z.string(), symbol: z.string(), autoEnabled: z.boolean() })
@@ -202,9 +212,65 @@ export function registerRoutes(app: Express, s: AppServices): void {
 
   app.get(
     "/api/paper",
-    auth,
-    asyncHandler(async (_req, _res) => {
-      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
+    authOptional,
+    asyncHandler(async (_req, res) => {
+      const state = await s.execution.paperState();
+      const settings = await s.gate.snapshot();
+      res.json({
+        cash: state.account.cash,
+        reservedCash: state.account.reservedCash,
+        paperAutopilot: settings.paperAutopilot,
+        positions: state.positions,
+        closed: state.closed,
+      });
+    }),
+  );
+
+  app.post(
+    "/api/paper/topup",
+    authOptional,
+    asyncHandler(async (_req, res) => {
+      const account = await s.execution.paperTopup();
+      res.json({ cash: account.cash });
+    }),
+  );
+
+  app.post(
+    "/api/paper/reset",
+    authOptional,
+    asyncHandler(async (_req, res) => {
+      const account = await s.execution.paperReset();
+      res.json({ cash: account.cash });
+    }),
+  );
+
+  app.post(
+    "/api/paper/buy",
+    authOptional,
+    asyncHandler(async (req, res) => {
+      const body = z
+        .object({
+          exchange: z.string().min(1),
+          symbol: z.string().min(1),
+          quantity: z.number().int().positive(),
+          lane: z.enum(["FNO", "CASH"]).default("FNO"),
+          kind: z.string().default("CE"),
+          side: z.enum(["BUY", "SELL"]).default("BUY"),
+          regime: z.string().optional(),
+          prediction: z
+            .object({
+              eodSpot: z.string().nullable().optional(),
+              eodPremium: z.string().nullable().optional(),
+              entrySpot: z.string().nullable().optional(),
+              compareTag: z.string().nullable().optional(),
+              aiConfidence: z.number().nullable().optional(),
+              why: z.string().nullable().optional(),
+            })
+            .optional(),
+        })
+        .parse(req.body);
+      const fill = await s.execution.paperManual(body);
+      res.json(fill);
     }),
   );
 
@@ -212,15 +278,38 @@ export function registerRoutes(app: Express, s: AppServices): void {
     "/api/paper/orders",
     auth,
     asyncHandler(async (_req, _res) => {
-      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
+      throw new AppError("ORDERING_DISABLED", "Use /api/paper/buy for training fills.", 403);
     }),
   );
 
   app.post(
     "/api/paper/positions/:id/close",
-    auth,
-    asyncHandler(async (_req, _res) => {
-      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
+    authOptional,
+    asyncHandler(async (req, res) => {
+      const id = String(req.params.id);
+      const body = z.object({ reason: z.string().optional() }).parse(req.body ?? {});
+      const closed = await s.execution.closePaperAndLearn(id, body.reason ?? "MANUAL");
+      res.json(closed);
+    }),
+  );
+
+  app.post(
+    "/api/settings/autopilot",
+    authOptional,
+    asyncHandler(async (req, res) => {
+      const body = z.object({ enabled: z.boolean() }).parse(req.body);
+      const settings = await s.gate.patch({ paperAutopilot: body.enabled });
+      res.json(settings);
+    }),
+  );
+
+  app.post(
+    "/api/settings/prediction-mode",
+    authOptional,
+    asyncHandler(async (req, res) => {
+      const body = z.object({ mode: z.enum(["ALGO", "AI"]) }).parse(req.body);
+      const settings = await s.gate.patch({ predictionMode: body.mode });
+      res.json(settings);
     }),
   );
 
@@ -542,6 +631,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
       }
       const forecast = await s.forecasts.refreshOne(exchange, symbol, "study", expiry);
       const last = Number(forecast.lastPrice);
+      const fp = await s.forecastParams.get(exchange, symbol);
       const eod = predictEodSpot({
         last,
         bias: forecast.bias,
@@ -551,6 +641,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
         supports: (forecast.path.supports ?? []).map(Number),
         resistances: (forecast.path.resistances ?? []).map(Number),
         pull: forecast.session.pull,
+        params: fp.algo.params,
       });
       const ai = viewAiStudy(forecast.evidence.aiStudy, {
         last,
@@ -565,7 +656,84 @@ export function registerRoutes(app: Express, s: AppServices): void {
         ai,
         compare,
         error: forecast.evidence.aiError ?? null,
+        paramsVersion: fp.version,
+        learning: {
+          algo: { mae: fp.algo.scoreMae, delta: fp.algo.delta, lastTuned: fp.algo.lastTunedSession },
+          ai: { mae: fp.ai.scoreMae, delta: fp.ai.delta, lastTuned: fp.ai.lastTunedSession },
+        },
       });
+    }),
+  );
+
+  app.post(
+    "/api/options/study/stream",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const exchange = String(req.body?.exchange ?? "NSE");
+      const symbol = String(req.body?.symbol ?? "");
+      const expiry = String(req.body?.expiry ?? "") || null;
+      if (!symbol) {
+        res.status(400).json({ error: { message: "symbol required" } });
+        return;
+      }
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders?.();
+      const send = (event: string, data: unknown) => {
+        if (res.writableEnded) return;
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+      let closed = false;
+      req.on("close", () => {
+        closed = true;
+      });
+      try {
+        send("phase", { label: "Study started", detail: `${exchange}:${symbol}` });
+        const forecast = await s.forecasts.refreshOne(exchange, symbol, "study", expiry, (trace) => {
+          if (closed) return;
+          send(trace.kind, trace);
+        });
+        if (closed) return;
+        const last = Number(forecast.lastPrice);
+        const fp = await s.forecastParams.get(exchange, symbol);
+        const eod = predictEodSpot({
+          last,
+          bias: forecast.bias,
+          expectedLow: Number(forecast.session.expectedLow),
+          expectedHigh: Number(forecast.session.expectedHigh),
+          magnet: Number(forecast.session.magnet),
+          supports: (forecast.path.supports ?? []).map(Number),
+          resistances: (forecast.path.resistances ?? []).map(Number),
+          pull: forecast.session.pull,
+          params: fp.algo.params,
+        });
+        const ai = viewAiStudy(forecast.evidence.aiStudy, {
+          last,
+          expectedLow: Number(forecast.session.expectedLow),
+          expectedHigh: Number(forecast.session.expectedHigh),
+          magnet: Number(forecast.session.magnet),
+        });
+        const compare = ai ? compareEod(Number(eod.close), Number(ai.close), forecast.bias, ai.direction) : null;
+        send("done", {
+          ok: Boolean(ai),
+          eod,
+          ai,
+          compare,
+          error: forecast.evidence.aiError ?? null,
+          paramsVersion: fp.version,
+          learning: {
+            algo: { mae: fp.algo.scoreMae, delta: fp.algo.delta, lastTuned: fp.algo.lastTunedSession },
+            ai: { mae: fp.ai.scoreMae, delta: fp.ai.delta, lastTuned: fp.ai.lastTunedSession },
+          },
+        });
+      } catch (err) {
+        send("error", { message: err instanceof Error ? err.message : "Study failed" });
+      } finally {
+        if (!res.writableEnded) res.end();
+      }
     }),
   );
 
@@ -662,16 +830,70 @@ export function registerRoutes(app: Express, s: AppServices): void {
     "/api/paper/try",
     auth,
     asyncHandler(async (_req, _res) => {
-      throw new AppError("ORDERING_DISABLED", "Paper trading is disabled. Analysis desk only.", 403);
+      throw new AppError("ORDERING_DISABLED", "Use /api/paper/buy for training fills.", 403);
+    }),
+  );
+
+  app.get(
+    "/api/learning/desk",
+    authOptional,
+    asyncHandler(async (_req, res) => {
+      res.json(await s.training.metrics());
+    }),
+  );
+
+  app.get(
+    "/api/learning/accuracy",
+    authOptional,
+    asyncHandler(async (req, res) => {
+      const exchange = String(req.query.exchange ?? "NSE");
+      const symbol = String(req.query.symbol ?? "").toUpperCase();
+      const summary = await s.ledger.summary(40);
+      const fp = symbol ? await s.forecastParams.get(exchange, symbol) : null;
+      const lastTune = fp?.algo.history.length ? fp.algo.history[fp.algo.history.length - 1] : null;
+      res.json({
+        mae: summary.mae,
+        hitRate: summary.hitRate,
+        samples: summary.samples,
+        recent: summary.recent,
+        symbol: symbol || null,
+        algo: fp
+          ? {
+              params: fp.algo.params,
+              delta: fp.algo.delta,
+              scoreMae: fp.algo.scoreMae,
+              scoreHitRate: fp.algo.scoreHitRate,
+              lastTunedSession: fp.algo.lastTunedSession,
+            }
+          : null,
+        ai: fp
+          ? {
+              params: fp.ai.params,
+              delta: fp.ai.delta,
+              scoreMae: fp.ai.scoreMae,
+              scoreHitRate: fp.ai.scoreHitRate,
+              lastTunedSession: fp.ai.lastTunedSession,
+            }
+          : null,
+        paramsVersion: fp?.version ?? null,
+        lastTune,
+        marketClosed: marketBlocksPaper(),
+      });
     }),
   );
 
   app.get(
     "/api/trades/desk",
-    auth,
+    authOptional,
     asyncHandler(async (_req, res) => {
       const journal = { entries: await s.journal.list(40), memory: await s.journal.memory() };
       const plays = await s.plays.list({ limit: 40 });
+      const paper = await s.execution.paperState();
+      const settings = await s.gate.snapshot();
+      const summary = await s.ledger.summary(24);
+      const watch = await s.market.listWatchlist();
+      const first = watch[0];
+      const fp = first ? await s.forecastParams.get(first.exchange, first.symbol) : null;
       let holdings = null;
       let brokerPos = null;
       try {
@@ -684,7 +906,45 @@ export function registerRoutes(app: Express, s: AppServices): void {
       } catch {
         brokerPos = null;
       }
-      res.json({ journal, holdings, brokerPos, plays });
+      res.json({
+        journal,
+        holdings,
+        brokerPos,
+        plays,
+        paper: {
+          cash: paper.account.cash,
+          paperAutopilot: settings.paperAutopilot,
+          positions: paper.positions,
+          closed: paper.closed,
+          marketClosed: marketBlocksPaper(),
+        },
+        learning: {
+          mae: summary.mae,
+          hitRate: summary.hitRate,
+          samples: summary.samples,
+          recent: summary.recent.slice(0, 12),
+          predictionMode: settings.predictionMode,
+          symbol: first ? `${first.exchange}:${first.symbol}` : null,
+          algo: fp
+            ? {
+                params: fp.algo.params,
+                delta: fp.algo.delta,
+                scoreMae: fp.algo.scoreMae,
+                lastTunedSession: fp.algo.lastTunedSession,
+              }
+            : null,
+          ai: fp
+            ? {
+                params: fp.ai.params,
+                delta: fp.ai.delta,
+                scoreMae: fp.ai.scoreMae,
+                lastTunedSession: fp.ai.lastTunedSession,
+              }
+            : null,
+          paramsVersion: fp?.version ?? null,
+          lastTune: fp?.algo.history.length ? fp.algo.history[fp.algo.history.length - 1] : null,
+        },
+      });
     }),
   );
 
@@ -717,7 +977,40 @@ export function registerRoutes(app: Express, s: AppServices): void {
     "/api/settings",
     s.sessions.middleware("optional"),
     asyncHandler(async (_req, res) => {
-      res.json(await s.gate.snapshot());
+      const settings = await s.gate.snapshot();
+      const kite = await s.vault.status();
+      res.json({ ...settings, kite });
+    }),
+  );
+
+  app.post(
+    "/api/setup/kite",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const body = z
+        .object({
+          apiKey: z.string().min(6).max(128),
+          apiSecret: z.string().min(6).max(256),
+        })
+        .parse(req.body);
+      const kite = await s.vault.save(body.apiKey, body.apiSecret);
+      res.json({ ok: true, kite });
+    }),
+  );
+
+  app.post(
+    "/api/setup/kite/revoke",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      if (req.session?.userId) {
+        try {
+          await s.auth.disconnect(req.session.userId);
+        } catch {
+          /* ignore */
+        }
+      }
+      const kite = await s.vault.revoke();
+      res.json({ ok: true, kite });
     }),
   );
 
@@ -731,9 +1024,13 @@ export function registerRoutes(app: Express, s: AppServices): void {
           haltPolicy: z.enum(["MAINTAIN", "CANCEL_ENTRIES", "FLATTEN"]).optional(),
           haltReason: z.string().nullable().optional(),
           activeAiProfileId: z.string().nullable().optional(),
+          paperAutopilot: z.boolean().optional(),
+          predictionMode: z.enum(["ALGO", "AI"]).optional(),
         })
         .parse(req.body);
-      res.json(await s.gate.patch(body));
+      const settings = await s.gate.patch(body);
+      const kite = await s.vault.status();
+      res.json({ ...settings, kite });
     }),
   );
 }

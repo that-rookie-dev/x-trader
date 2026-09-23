@@ -8,14 +8,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
-    "dev:api": "npm run dev -w @xtrader/api",
-    "dev:web": "npm run dev -w @xtrader/web",
+    "dev": "npm run build && npm run start:api",
+    "dev:api": "npm run start:api",
+    "dev:web": "npm run start:web",
     "build": "npm run build -w @xtrader/domain && npm run build -w @xtrader/api && npm run build -w @xtrader/web",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "start": "npm run start -w @xtrader/api",
+    "start": "npm run start:api",
+    "start:api": "NODE_ENV=production npm run start -w @xtrader/api",
+    "start:web": "NODE_ENV=production npm run start -w @xtrader/web",
     "cli": "npm run cli -w @xtrader/api"
   },
   "engines": {

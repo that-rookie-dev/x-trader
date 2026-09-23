@@ -4,46 +4,51 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { showDec } from "@/lib/format";
+import { sessionPhase, sessionPhaseLabel, type SessionPhase } from "@/lib/session";
 import { Coach, readSeen, tourForPath } from "@/components/Coach";
+import { SetupCredentials } from "@/components/SetupCredentials";
+import { VectorAtmosphere } from "@/components/VectorAtmosphere";
 
 const NAV = [
   ["/", "Options", IconOptions],
   ["/stocks", "Stocks", IconStocks],
+  ["/training", "Training", IconTraining],
   ["/trades", "My trades", IconTrades],
   ["/account", "Account", IconAccount],
   ["/settings", "Settings", IconSettings],
 ] as const;
 
-function compactStatus(status?: string): string {
-  switch (status) {
-    case "CONNECTED":
-      return "ON";
-    case "DISCONNECTED":
-      return "OFF";
-    case "EXPIRED":
-      return "EXP";
-    case "CONNECTING":
-      return "…";
-    case "ERROR":
-      return "ERR";
-    default:
-      return status ?? "…";
-  }
-}
+type KiteStatus = {
+  configured: boolean;
+  apiKeyHint: string | null;
+  configuredAt: string | null;
+};
 
 type Bootstrap = {
   linked: boolean;
   authenticated: boolean;
   locked?: boolean;
   needsReconnect?: boolean;
+  needsCredentials?: boolean;
+  kite?: KiteStatus;
   broker: { status: string; clientId?: string };
-  settings: { deskMode?: string; ordersEnabled?: boolean; haltActive: boolean };
+  settings: {
+    deskMode?: string;
+    ordersEnabled?: boolean;
+    haltActive: boolean;
+    paperAutopilot?: boolean;
+    predictionMode?: "ALGO" | "AI";
+    paperCash?: string | null;
+    paperOpenCount?: number;
+  };
 };
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [theme, setTheme] = useState("dark");
   const [clock, setClock] = useState("");
+  const [phase, setPhase] = useState<SessionPhase>("open");
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tour, setTour] = useState<string | null>(null);
@@ -61,6 +66,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const tick = () => {
+      const now = new Date();
       setClock(
         new Intl.DateTimeFormat("en-GB", {
           timeZone: "Asia/Kolkata",
@@ -68,8 +74,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           minute: "2-digit",
           second: "2-digit",
           hourCycle: "h23",
-        }).format(new Date()) + " IST",
+        }).format(now) + " IST",
       );
+      setPhase(sessionPhase(now));
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -98,12 +105,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (boot?.needsCredentials) return;
     const name = tourForPath(path);
     if (!readSeen()[name]) {
       const id = window.setTimeout(() => setTour(name), 600);
       return () => window.clearTimeout(id);
     }
-  }, [path]);
+  }, [path, boot?.needsCredentials]);
 
   async function connect() {
     try {
@@ -125,8 +133,73 @@ export function Shell({ children }: { children: React.ReactNode }) {
     window.location.reload();
   }
 
+  async function toggleAutopilot() {
+    const enabled = !boot?.settings.paperAutopilot;
+    try {
+      const settings = await api<Bootstrap["settings"]>("/api/settings/autopilot", {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      });
+      setBoot((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...settings } } : prev));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "autopilot failed");
+    }
+  }
+
+  async function setPredictionMode(mode: "ALGO" | "AI") {
+    if (boot?.settings.predictionMode === mode) return;
+    try {
+      const settings = await api<Bootstrap["settings"]>("/api/settings/prediction-mode", {
+        method: "POST",
+        body: JSON.stringify({ mode }),
+      });
+      setBoot((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...settings } } : prev));
+      window.dispatchEvent(new CustomEvent("xtrader-prediction-mode", { detail: mode }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "prediction mode failed");
+    }
+  }
+
+  async function topupPaper() {
+    try {
+      const { cash } = await api<{ cash: string }>("/api/paper/topup", { method: "POST", body: "{}" });
+      setBoot((prev) =>
+        prev ? { ...prev, settings: { ...prev.settings, paperCash: cash } } : prev,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "topup failed");
+    }
+  }
+
+  const paperCash = boot?.settings.paperCash;
+  const paperLow = paperCash != null && Number(paperCash) < 500;
+
+  if (!boot && !error) {
+    return (
+      <div className="creds-gate on">
+        <VectorAtmosphere />
+        <div className="creds-loading">
+          <span className="creds-mark">XT</span>
+          <p>Starting desk…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (boot?.needsCredentials) {
+    return (
+      <SetupCredentials
+        onSaved={() => {
+          setBoot(null);
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="shell">
+      <VectorAtmosphere />
       <aside className="side">
         <div className="side-top">
           <div className="brand" title="xTrader">
@@ -135,7 +208,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="nav">
           {NAV.map(([href, label, Icon]) => (
-            <Link key={href} href={href} className={path === href ? "active" : ""} aria-label={label}>
+            <Link
+              key={href}
+              href={href}
+              className={path === href ? "active" : ""}
+              aria-label={label}
+              onClick={(e) => (e.currentTarget as HTMLAnchorElement).blur()}
+            >
               <Icon />
               <span className="nav-tip">{label}</span>
             </Link>
@@ -144,14 +223,59 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="main">
         <header className="top">
-          <span className="badge ok">DESK</span>
-          <span className="badge warn">READ-ONLY</span>
-          <span className={`badge ${boot?.broker.status === "CONNECTED" ? "ok" : "warn"}`}>
-            {compactStatus(boot?.broker.status)}
-          </span>
+          <div className="top-brand">
+            <strong>xTrader</strong>
+            <span>Analysis terminal</span>
+          </div>
           {boot?.settings.haltActive ? <span className="badge live">HALT</span> : null}
-          <span className="ist">{clock}</span>
+          <span className={`badge mono ${paperLow ? "live" : "ok"}`} title="Paper training wallet">
+            ₹{paperCash != null ? showDec(paperCash, 0) : "—"}
+          </span>
+          <span
+            className={`badge session-phase ${phase === "closing" ? "closing" : phase === "closed" || phase === "preopen" ? "warn" : "ok"}`}
+            title={
+              phase === "closing"
+                ? "Last 15 minutes before 15:30 IST close"
+                : phase === "closed"
+                  ? "Market closed — no new entries"
+                  : phase === "preopen"
+                    ? "Before 09:15 IST open"
+                    : "Regular session until 15:30 IST"
+            }
+          >
+            {sessionPhaseLabel(phase)}
+          </span>
+          <span className={`ist ${phase === "closing" ? "ist-closing" : ""}`}>{clock}</span>
           <span className="spacer" />
+          <div className="pred-mode" role="group" aria-label="Prediction mode">
+            <button
+              type="button"
+              className={boot?.settings.predictionMode !== "AI" ? "on" : ""}
+              title="Use mechanical equation (algo delta)"
+              onClick={() => void setPredictionMode("ALGO")}
+            >
+              ALGO
+            </button>
+            <button
+              type="button"
+              className={boot?.settings.predictionMode === "AI" ? "on" : ""}
+              title="Use AI equation (algo ⊕ AI delta)"
+              onClick={() => void setPredictionMode("AI")}
+            >
+              AI
+            </button>
+          </div>
+          <button
+            type="button"
+            className={`btn ${boot?.settings.paperAutopilot ? "primary" : ""}`}
+            title="Paper Autopilot — local BUY/SELL only, never Zerodha"
+            onClick={() => void toggleAutopilot()}
+          >
+            {boot?.settings.paperAutopilot ? "Autopilot ON" : "Autopilot"}
+          </button>
+          <button type="button" className="btn" title="Add ₹25,000 paper cash" onClick={() => void topupPaper()}>
+            +₹25k
+          </button>
           <button
             type="button"
             className="btn"
@@ -186,14 +310,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </header>
         <div className="content">
           {boot && !boot.authenticated ? (
-            <div className="card">
-              <h2>{boot.linked ? "Login ran out" : "Connect to continue"}</h2>
+            <div className="card gate-card">
+              <p className="eyebrow">
+                <span className="eyebrow-dot" aria-hidden="true" />
+                Session
+              </p>
+              <h2>{boot.linked ? "Link expired" : "Connect to continue"}</h2>
               <p className="muted">
                 {boot.linked
-                  ? "Connect again with the same account so the helper can see live prices."
-                  : "Connect your trading account so the helper can read prices and tell you what to do."}
+                  ? "Re-authenticate with the same Zerodha account so the desk can read live prices and your book."
+                  : "Link Zerodha once. xTrader stays read-only — every order still happens in the Zerodha app."}
               </p>
-              <div className="row" style={{ marginTop: 10 }}>
+              <div className="row" style={{ marginTop: 12 }}>
                 <button className="btn primary" data-coach="connect" onClick={() => void connect()}>
                   {boot.linked ? "Reconnect Zerodha" : "Connect Zerodha"}
                 </button>
@@ -230,6 +358,14 @@ function IconTrades() {
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
       <rect x="5" y="4" width="14" height="16" rx="1" />
       <path d="M8 9h8M8 13h8M8 17h5" />
+    </svg>
+  );
+}
+
+function IconTraining() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path d="M4 18V6M9 18V10M14 18V8M19 18V4" />
     </svg>
   );
 }

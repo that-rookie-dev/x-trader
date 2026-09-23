@@ -7,9 +7,10 @@
     "xtrader": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "NODE_ENV=production node dist/index.js",
+    "watch": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "NODE_ENV=production node dist/index.js",
     "cli": "tsx src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

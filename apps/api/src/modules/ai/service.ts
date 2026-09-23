@@ -2,15 +2,32 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
-import { generateObject, generateText, type LanguageModel } from "ai";
+import { generateObject, generateText, streamText, type LanguageModel } from "ai";
 import { eq } from "drizzle-orm";
 import { AppError, aiStudyDraftSchema, strategyDecisionSchema, type AiStudyDraft, type StrategyDecision } from "@xtrader/domain";
 import type { Database } from "../../db/client.js";
 import { agentDecisions, aiProfiles, appSettings } from "../../db/schema.js";
 import type { CryptoService } from "../../security/crypto.js";
 import { AVAILABLE_PROVIDERS, getProvider } from "./catalog.js";
+import type { StudyTraceHandler } from "./study-trace.js";
 import { listProviderModels, validateProvider } from "./transport.js";
 import { isOpencodeFamily, opencodeHeaders, usesOpencodeAnthropicWire } from "./opencode-route.js";
+import type { PredictionLedger } from "../learning/ledger.js";
+import type { ForecastParamsStore } from "../learning/params-store.js";
+import type { ForecastParams } from "../learning/params.js";
+
+const STUDY_SYSTEM = `You are xTrader's session study desk for Indian cash + F&O.
+Read the news and tape. Reply with a single JSON object, no markdown.
+Keys: direction (BULLISH|BEARISH|RANGE), pull (0-1), closeHint (number near the band), confidence (0-1), peStrike (number or null), ceStrike (number or null), why (string), catalysts (string[]), skip (boolean), paramDelta (optional object with bounded keys wSession|wMagnet|wSpot|wFlow|wPain|wVwap|pullBull|pullBear|pullRange|pcrTilt|adxTrendTilt|ivMeanRevert|lateSpotBoost|optionRemainExpiry|optionRemainLater as absolute target values).
+Rules:
+- pull: bearish 0.25-0.35, range 0.5, bullish 0.65-0.75.
+- closeHint must stay near the given band and respect CPR, VWAP, support and resistance.
+- Treat supports and CPR BC as floors, resistances and CPR TC as ceilings. Prefer a close at the next level in your direction.
+- Weight the algorithm score and named signals; do not invent levels.
+- PE strike at or below spot. CE strike at or above spot.
+- why: 2 short sentences naming the level you are using. catalysts: real headlines only.
+- Use missMemory, algoParams, and aiDelta: when recent errors show a pattern, you may suggest tiny paramDelta absolute overrides for the AI equation branch (on top of algoParams).
+- You never place orders.`;
 
 const PLACEHOLDER_KEYS = new Set(["", "no-key-needed", "no-api-key-required", "***", "********"]);
 
@@ -18,6 +35,8 @@ export class AiService {
   constructor(
     private readonly db: Database,
     private readonly crypto: CryptoService,
+    private readonly ledger?: PredictionLedger,
+    private readonly forecastParams?: ForecastParamsStore,
   ) {}
 
   catalog() {
@@ -264,59 +283,82 @@ export class AiService {
     }
   }
 
-  async studyEod(input: {
-    symbol: string;
-    last: number;
-    band: { low: number; high: number; magnet: number };
-    levels?: {
-      supports: string[];
-      resistances: string[];
-      pivot: number | null;
-      priorHigh: number | null;
-      priorLow: number | null;
-      priorClose: number | null;
-    };
-    algo: { bias: string; close: string; confidence: number; score?: number; signals?: string[] };
-    technical: string;
-    headlines: Array<{ title: string; snippet?: string }>;
-    pages: Array<{ title?: string; text: string }>;
-    atm: number | null;
-  }): Promise<{ draft: AiStudyDraft | null; error?: string }> {
+  async studyEod(
+    input: {
+      symbol: string;
+      last: number;
+      band: { low: number; high: number; magnet: number };
+      levels?: {
+        supports: string[];
+        resistances: string[];
+        pivot: number | null;
+        priorHigh: number | null;
+        priorLow: number | null;
+        priorClose: number | null;
+      };
+      algo: { bias: string; close: string; confidence: number; score?: number; signals?: string[] };
+      technical: string;
+      headlines: Array<{ title: string; snippet?: string }>;
+      pages: Array<{ title?: string; text: string }>;
+      atm: number | null;
+      formulaParams?: ForecastParams;
+      algoParams?: ForecastParams;
+      aiDelta?: Partial<ForecastParams>;
+      paramsVersion?: number;
+    },
+    onTrace?: StudyTraceHandler,
+  ): Promise<{ draft: AiStudyDraft | null; error?: string; paramDelta?: Partial<ForecastParams> | null }> {
     const started = Date.now();
     const active = await this.activeRow();
     if (!active) return { draft: null, error: "No active AI profile. Add and activate one in Settings." };
     if (!active.modelId) return { draft: null, error: "Active profile has no model selected." };
+    const missMemory = this.ledger ? await this.ledger.studyMemory(input.symbol, 8) : "";
+    const formula =
+      input.formulaParams ??
+      input.algoParams ??
+      null;
+    const prompt = JSON.stringify({
+      symbol: input.symbol,
+      spot: input.last,
+      band: input.band,
+      levels: input.levels ?? null,
+      algorithm: input.algo,
+      technical: input.technical,
+      atm: input.atm,
+      formulaParams: formula,
+      algoParams: input.algoParams ?? null,
+      aiDelta: input.aiDelta ?? null,
+      paramsVersion: input.paramsVersion ?? null,
+      missMemory,
+      headlines: input.headlines.slice(0, 8),
+      pages: input.pages.slice(0, 3).map((p) => ({ title: p.title, text: p.text.slice(0, 900) })),
+    }).slice(0, 14_000);
+    onTrace?.({
+      kind: "prompt",
+      system: STUDY_SYSTEM,
+      prompt,
+      model: active.modelId,
+      provider: active.kind,
+    });
     try {
       const model = await this.model();
-      const { text } = await generateText({
+      const stream = streamText({
         model,
         maxRetries: 0,
-        system: `You are xTrader's session study desk for Indian cash + F&O.
-Read the news and tape. Reply with a single JSON object, no markdown.
-Keys: direction (BULLISH|BEARISH|RANGE), pull (0-1), closeHint (number near the band), confidence (0-1), peStrike (number or null), ceStrike (number or null), why (string), catalysts (string[]), skip (boolean).
-Rules:
-- pull: bearish 0.25-0.35, range 0.5, bullish 0.65-0.75.
-- closeHint must stay near the given band and respect CPR, VWAP, support and resistance.
-- Treat supports and CPR BC as floors, resistances and CPR TC as ceilings. Prefer a close at the next level in your direction.
-- Weight the algorithm score and named signals; do not invent levels.
-- PE strike at or below spot. CE strike at or above spot.
-- why: 2 short sentences naming the level you are using. catalysts: real headlines only.
-- You never place orders.`,
-        prompt: JSON.stringify({
-          symbol: input.symbol,
-          spot: input.last,
-          band: input.band,
-          levels: input.levels ?? null,
-          algorithm: input.algo,
-          technical: input.technical,
-          atm: input.atm,
-          headlines: input.headlines.slice(0, 8),
-          pages: input.pages.slice(0, 3).map((p) => ({ title: p.title, text: p.text.slice(0, 900) })),
-        }).slice(0, 12_000),
+        system: STUDY_SYSTEM,
+        prompt,
       });
-      const parsed = aiStudyDraftSchema.safeParse(extractJson(text));
+      let text = "";
+      for await (const delta of stream.textStream) {
+        text += delta;
+        onTrace?.({ kind: "llm", delta });
+      }
+      onTrace?.({ kind: "raw", text });
+      const rawJson = extractJson(text) as Record<string, unknown> | null;
+      const parsed = aiStudyDraftSchema.safeParse(rawJson);
       if (!parsed.success) {
         const error = "Model replied, but the study JSON was not usable.";
+        onTrace?.({ kind: "parsed", ok: false, detail: error });
         await this.db.insert(agentDecisions).values({
           profileId: active.id,
           inputSnapshot: { kind: "eod-study", symbol: input.symbol },
@@ -327,17 +369,27 @@ Rules:
         });
         return { draft: null, error };
       }
+      const paramDelta =
+        rawJson && typeof rawJson.paramDelta === "object" && rawJson.paramDelta != null
+          ? (rawJson.paramDelta as Partial<ForecastParams>)
+          : null;
+      onTrace?.({
+        kind: "parsed",
+        ok: true,
+        detail: `${parsed.data.direction} · closeHint ${parsed.data.closeHint} · conf ${parsed.data.confidence}`,
+      });
       await this.db.insert(agentDecisions).values({
         profileId: active.id,
         inputSnapshot: { kind: "eod-study", symbol: input.symbol },
-        output: parsed.data as unknown as Record<string, unknown>,
+        output: { ...parsed.data, paramDelta } as unknown as Record<string, unknown>,
         latencyMs: Date.now() - started,
         provider: active.kind,
         model: active.modelId,
       });
-      return { draft: parsed.data };
+      return { draft: parsed.data, paramDelta };
     } catch (error) {
       const message = shortModelError(error);
+      onTrace?.({ kind: "parsed", ok: false, detail: message });
       await this.db.insert(agentDecisions).values({
         profileId: active.id,
         inputSnapshot: { kind: "eod-study", symbol: input.symbol },

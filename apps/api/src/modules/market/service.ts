@@ -7,6 +7,7 @@ import type { Logger } from "../../config/logger.js";
 import type { Env } from "../../config/env.js";
 import type { KiteGateway } from "../brokers/zerodha/kite-gateway.js";
 import type { ZerodhaAuthService } from "../brokers/zerodha/auth-service.js";
+import type { KiteCredentialsVault } from "../brokers/zerodha/credentials-vault.js";
 import { KiteTicker } from "kiteconnect";
 import { collectFnoNames, INDEX_FNO_ORDER, spotRefForUnderlying, underlyingFnoName } from "../forecast/levels.js";
 
@@ -36,6 +37,7 @@ export class MarketDataService extends EventEmitter {
     private readonly auth: ZerodhaAuthService,
     private readonly kite: KiteGateway,
     private readonly log: Logger,
+    private readonly vault: KiteCredentialsVault,
   ) {
     super();
     this.setMaxListeners(50);
@@ -140,18 +142,26 @@ export class MarketDataService extends EventEmitter {
     }
   }
 
-  async addWatchItem(input: { exchange: string; symbol: string; orderable?: boolean }) {
+  async addWatchItem(input: { exchange: string; symbol: string; orderable?: boolean; autoEnabled?: boolean }) {
     const exchange = input.exchange.trim().toUpperCase() || "NSE";
     const symbol = input.symbol.trim().toUpperCase();
     if (!symbol) throw new Error("Symbol is required");
     const watchlist = (await this.ensureWatchlist())[0];
     if (!watchlist) throw new AppError("NO_WATCHLIST", "Watchlist is missing.", 500);
-    const orderable = input.orderable ?? symbol !== "NIFTY 50";
+    const orderable = input.orderable ?? !/NIFTY|SENSEX|BANKNIFTY|FINNIFTY|MIDCPNIFTY/i.test(symbol);
+    const autoEnabled = input.autoEnabled ?? true;
     await this.db
       .insert(watchlistItems)
-      .values({ watchlistId: watchlist.id, exchange, symbol, orderable, sortOrder: Date.now() % 10_000 })
+      .values({
+        watchlistId: watchlist.id,
+        exchange,
+        symbol,
+        orderable,
+        autoEnabled,
+        sortOrder: Date.now() % 10_000,
+      })
       .onConflictDoNothing();
-    await this.refreshQuotes();
+    await this.refreshQuotes().catch(() => undefined);
     return this.listWatchlist();
   }
 
@@ -757,11 +767,12 @@ export class MarketDataService extends EventEmitter {
 
   async connectStream(): Promise<void> {
     const access = await this.auth.getAccessToken();
-    if (!access || !this.env.KITE_API_KEY) return;
+    const creds = await this.vault.get();
+    if (!access || !creds?.apiKey) return;
     if (this.ticker) return;
     try {
       const ticker = new KiteTicker({
-        api_key: this.env.KITE_API_KEY,
+        api_key: creds.apiKey,
         access_token: access.token,
       });
       ticker.on("connect", () => {

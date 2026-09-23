@@ -1,8 +1,17 @@
 import type { ForecastBias } from "@xtrader/domain";
 import type { AgentMark } from "./desk.js";
+import { DEFAULT_FORECAST_PARAMS, type ForecastParams } from "../learning/params.js";
+
+/** NSE/BSE cash + F&O session (IST). */
+export const MARKET_OPEN_MIN = 9 * 60 + 15;
+export const MARKET_CLOSE_SOON_MIN = 15 * 60 + 15;
+export const MARKET_CLOSE_MIN = 15 * 60 + 30;
 
 export type SessionClock = {
+  /** True only outside market hours — no new entries. */
   cutoff: boolean;
+  /** Final 15 minutes before the close bell. */
+  closingSoon: boolean;
   netFloor: number;
   label: string;
   expiryToday: boolean;
@@ -20,18 +29,32 @@ export function istMinutes(now: Date): number {
   return hour * 60 + minute;
 }
 
-export function sessionClock(now: Date, expiry: string | null): SessionClock {
+export function sessionClock(now: Date, expiry: string | null, params?: ForecastParams): SessionClock {
+  const floors = params ?? DEFAULT_FORECAST_PARAMS;
   const mins = istMinutes(now);
   const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const expiryToday = Boolean(expiry && expiry <= today);
-  const cutoff = expiryToday ? mins >= 13 * 60 + 30 : mins >= 15 * 60;
+  const closed = mins >= MARKET_CLOSE_MIN || mins < MARKET_OPEN_MIN;
+  const closingSoon = !closed && mins >= MARKET_CLOSE_SOON_MIN;
   const late = mins >= 14 * 60 + 30;
   return {
-    cutoff,
-    netFloor: cutoff ? 150 : late ? 250 : 150,
-    label: cutoff ? "CUTOFF" : expiryToday ? "UNTIL 13:30" : "UNTIL 15:00",
+    cutoff: closed,
+    closingSoon,
+    netFloor: closed ? floors.netFloorBase : late ? floors.netFloorLate : floors.netFloorBase,
+    label: closed
+      ? mins >= MARKET_CLOSE_MIN
+        ? "CLOSED"
+        : "PRE-OPEN"
+      : closingSoon
+        ? "LAST 15M"
+        : "UNTIL 15:30",
     expiryToday,
   };
+}
+
+/** True when paper transactions must be blocked (PRE-OPEN / CLOSED). */
+export function marketBlocksPaper(now = new Date()): boolean {
+  return sessionClock(now, null).cutoff;
 }
 
 export function mapInvalidated(bias: ForecastBias, last: number, expectedLow: number, expectedHigh: number): boolean {

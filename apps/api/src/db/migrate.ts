@@ -404,8 +404,73 @@ export async function applySchema(client: SqlClient): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS vol_history_day ON vol_history(symbol, session_date);
+    CREATE TABLE IF NOT EXISTS prediction_ledger (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      kind text NOT NULL,
+      exchange text NOT NULL,
+      symbol text NOT NULL,
+      expiry text,
+      session_date text NOT NULL,
+      predicted_at timestamptz NOT NULL DEFAULT now(),
+      predicted_close numeric(18,4),
+      predicted_premium numeric(18,4),
+      predicted_direction text,
+      entry_price numeric(18,4),
+      payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+      actual_at timestamptz,
+      actual_close numeric(18,4),
+      actual_premium numeric(18,4),
+      actual_pnl numeric(18,4),
+      error_abs numeric(18,6),
+      error_pct numeric(12,6),
+      direction_hit boolean,
+      source_ref text,
+      status text NOT NULL DEFAULT 'OPEN'
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS prediction_ledger_day_kind
+      ON prediction_ledger(kind, exchange, symbol, session_date);
+    CREATE INDEX IF NOT EXISTS prediction_ledger_status ON prediction_ledger(status, session_date);
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'forecast_params' AND column_name = 'params'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'forecast_params' AND column_name = 'algo_params'
+      ) THEN
+        ALTER TABLE forecast_params RENAME TO forecast_params_legacy;
+      END IF;
+    END $$;
+    CREATE TABLE IF NOT EXISTS forecast_params (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      exchange text NOT NULL,
+      symbol text NOT NULL,
+      version integer NOT NULL DEFAULT 1,
+      algo_params jsonb NOT NULL,
+      algo_delta jsonb NOT NULL DEFAULT '{}'::jsonb,
+      algo_score_mae numeric(12,6),
+      algo_score_hit_rate numeric(8,4),
+      algo_history jsonb NOT NULL DEFAULT '[]'::jsonb,
+      algo_last_tuned_session text,
+      ai_params jsonb NOT NULL,
+      ai_delta jsonb NOT NULL DEFAULT '{}'::jsonb,
+      ai_score_mae numeric(12,6),
+      ai_score_hit_rate numeric(8,4),
+      ai_history jsonb NOT NULL DEFAULT '[]'::jsonb,
+      ai_last_tuned_session text,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS forecast_params_symbol ON forecast_params(exchange, symbol);
     ALTER TABLE watchlist_items ADD COLUMN IF NOT EXISTS auto_enabled boolean NOT NULL DEFAULT false;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS kite_api_key_enc jsonb;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS kite_api_secret_enc jsonb;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS kite_configured_at timestamptz;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS paper_autopilot boolean NOT NULL DEFAULT false;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS prediction_mode text NOT NULL DEFAULT 'ALGO';
+    ALTER TABLE positions ADD COLUMN IF NOT EXISTS meta jsonb NOT NULL DEFAULT '{}'::jsonb;
     UPDATE app_settings SET agent_mode = 'COPILOT' WHERE agent_mode IN ('MANUAL', 'COPILOT');
     UPDATE app_settings SET agent_mode = 'AUTO' WHERE agent_mode IN ('AUTONOMOUS', 'AUTO');
+    UPDATE app_settings SET prediction_mode = 'ALGO' WHERE prediction_mode IS NULL OR prediction_mode NOT IN ('ALGO', 'AI');
   `);
 }

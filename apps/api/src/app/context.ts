@@ -20,6 +20,12 @@ import type { ForecastEngine } from "../modules/forecast/engine.js";
 import type { AgentLoop } from "../modules/agent/loop.js";
 import type { SignalStore } from "../modules/forecast/signals.js";
 import type { PlayStore } from "../modules/forecast/plays.js";
+import type { KiteCredentialsVault } from "../modules/brokers/zerodha/credentials-vault.js";
+import type { PredictionLedger } from "../modules/learning/ledger.js";
+import type { ForecastParamsStore } from "../modules/learning/params-store.js";
+import type { AutoTuner } from "../modules/learning/tuner.js";
+import type { PredictionReconciler } from "../modules/learning/reconcile.js";
+import type { TrainingDesk } from "../modules/learning/training-desk.js";
 
 export interface AppServices {
   env: Env;
@@ -45,4 +51,10 @@ export interface AppServices {
   agent: AgentLoop;
   signals: SignalStore;
   plays: PlayStore;
+  vault: KiteCredentialsVault;
+  ledger: PredictionLedger;
+  forecastParams: ForecastParamsStore;
+  tuner: AutoTuner;
+  reconciler: PredictionReconciler;
+  training: TrainingDesk;
 }

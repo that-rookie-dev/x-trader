@@ -251,6 +251,30 @@ export class PlayStore {
     return n;
   }
 
+  /** Drop OPEN plays whose contract is no longer an active BUY/SELL on this board. */
+  async closeInactive(input: {
+    underlying: string;
+    expiry: string | null;
+    keep: Iterable<string>;
+    now?: Date;
+  }): Promise<number> {
+    const exp = input.expiry ?? "";
+    const keep = new Set([...input.keep].map((c) => c.toUpperCase()));
+    const open = await this.db
+      .select()
+      .from(plays)
+      .where(and(eq(plays.underlying, input.underlying), eq(plays.expiry, exp), eq(plays.status, "OPEN")));
+    const now = input.now ?? new Date();
+    let n = 0;
+    for (const row of open) {
+      if (keep.has(row.contract.toUpperCase())) continue;
+      await this.db.update(plays).set({ status: "EXPIRED", updatedAt: now }).where(eq(plays.id, row.id));
+      this.bus.emit("play", toPlay({ ...row, status: "EXPIRED" }));
+      n += 1;
+    }
+    return n;
+  }
+
   async tick(read?: ZerodhaReadAdapter, now = new Date()): Promise<void> {
     await this.expireOpen(now);
     if (read) await this.reconcile(read, now);

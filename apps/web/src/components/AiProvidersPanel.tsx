@@ -274,16 +274,14 @@ export function AiProvidersPanel() {
 
   return (
     <div className="card">
-      <div className="row" style={{ justifyContent: "space-between" }}>
+      <div className="section-head">
         <h2>AI providers</h2>
-        <div className="row">
-          <button className="btn primary" onClick={openAdd}>
-            Add profile
-          </button>
-        </div>
+        <button className="btn primary" onClick={openAdd}>
+          Add profile
+        </button>
       </div>
       <p className="muted">
-        Agent-X style: add a profile, pick a model, run a live ping, then activate. API keys are encrypted and never shown again.
+        Add a profile, pick a model, run a live ping, then activate. API keys are encrypted and never shown again.
       </p>
       {error ? <p className="down">{error}</p> : null}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", marginTop: 10 }}>

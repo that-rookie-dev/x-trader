@@ -29,9 +29,13 @@ jobs:
           cp -R apps dist-release/
           cp -R packages dist-release/
           cp -R node_modules dist-release/ || true
+          cp scripts/install.sh dist-release/install.sh
           printf '#!/usr/bin/env bash\ncd "$(dirname "$0")/.."\nnode apps/api/dist/cli.js "$@"\n' > dist-release/bin/xtrader
-          chmod +x dist-release/bin/xtrader
+          chmod +x dist-release/bin/xtrader dist-release/install.sh
           tar -czf xtrader-${{ matrix.platform }}.tar.gz -C dist-release .
+          cp scripts/install.sh install.sh
       - uses: softprops/action-gh-release@v2
         with:
-          files: xtrader-${{ matrix.platform }}.tar.gz
+          files: |
+            xtrader-${{ matrix.platform }}.tar.gz
+            install.sh

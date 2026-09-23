@@ -7,12 +7,24 @@ import type { JournalService } from "../journal/service.js";
 import type { SignalStore } from "../forecast/signals.js";
 import type { PlayStore } from "../forecast/plays.js";
 import type { ZerodhaReadAdapter } from "../brokers/zerodha/read-adapter.js";
+import type { StrategyEngine } from "../strategy/engine.js";
+import type { PaperAutopilot } from "../execution/paper-autopilot.js";
+import type { PredictionReconciler } from "../learning/reconcile.js";
 import { buildOptionsBoard } from "../forecast/board.js";
-import { pickExpiringDesk } from "../forecast/levels.js";
+import { buildStocksDesk } from "../forecast/equity.js";
+import type { FnoUnderlying } from "../forecast/levels.js";
+import type { ForecastParamsStore } from "../learning/params-store.js";
+import type { PredictionLedger } from "../learning/ledger.js";
 
-/** Desk loop: refresh, scan signals, reconcile Zerodha fills. Never places orders. */
+import type { TrainingDesk } from "../learning/training-desk.js";
+
+const SCAN_BATCH = 4;
+
+/** Desk loop: refresh, scan F&O boards, paper Autopilot, reconcile Zerodha fills. Never places live orders. */
 export class AgentLoop {
   private running = false;
+  private cursor = 0;
+  private stocksTick = 0;
 
   constructor(
     private readonly db: Database,
@@ -24,6 +36,12 @@ export class AgentLoop {
     private readonly plays: PlayStore,
     private readonly log: Logger,
     private readonly read?: ZerodhaReadAdapter,
+    private readonly autopilot?: PaperAutopilot,
+    private readonly strategy?: StrategyEngine,
+    private readonly reconciler?: PredictionReconciler,
+    private readonly ledger?: PredictionLedger,
+    private readonly forecastParams?: ForecastParamsStore,
+    private readonly training?: TrainingDesk,
   ) {}
 
   async tick(): Promise<void> {
@@ -32,38 +50,122 @@ export class AgentLoop {
     try {
       const settings = await this.gate.snapshot();
       if (settings.haltActive) {
+        this.training?.setPhase("halted", "Desk halt active");
         this.log.debug("desk loop paused: halt active");
         return;
       }
+      this.training?.setPhase("scanning", "Refreshing quotes + watchlist boards");
       await this.market.refreshQuotes().catch((err) => this.log.warn({ err }, "quote refresh in agent loop failed"));
-      await this.forecasts.refreshWatchlist().catch((err) => this.log.warn({ err }, "forecast refresh failed"));
-      await this.scanDesk().catch((err) => this.log.warn({ err }, "desk signal scan failed"));
+      await this.forecasts.refreshWatchlist("live").catch((err) => this.log.warn({ err }, "forecast refresh failed"));
+      await this.scanDesks().catch((err) => this.log.warn({ err }, "desk signal scan failed"));
+      this.stocksTick += 1;
+      if (this.stocksTick % 3 === 0) {
+        await this.scanStocks().catch((err) => this.log.warn({ err }, "stocks autopilot scan failed"));
+      }
       await this.plays.tick(this.read).catch((err) => this.log.warn({ err }, "play reconcile failed"));
+      if (this.reconciler) {
+        this.training?.setPhase("resolving", "Resolving EOD predictions when closed");
+        const watch = await this.market.listWatchlist();
+        await this.reconciler
+          .tick(watch.map((w) => ({ exchange: w.exchange, symbol: w.symbol })))
+          .catch((err) => this.log.warn({ err }, "prediction reconcile failed"));
+      }
+      this.training?.setPhase("idle", null);
     } catch (err) {
       this.log.warn({ err }, "agent loop tick failed");
+      this.training?.setPhase("idle", err instanceof Error ? err.message : "tick failed");
     } finally {
       this.running = false;
     }
   }
 
-  private async scanDesk(): Promise<void> {
+  /** Round-robin scan of tracked watchlist F&O underlyings (falls back to index pool). */
+  private async scanDesks(): Promise<void> {
     if (!this.read) return;
     const names = await this.market.listFnoUnderlyings();
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const desk = pickExpiringDesk(names, today);
-    if (!desk) return;
-    await buildOptionsBoard(
-      {
+    const watch = await this.market.listWatchlist();
+    const byKey = new Map(names.map((n) => [`${n.exchange.toUpperCase()}:${n.symbol.toUpperCase()}`, n]));
+    const fromWatch = watch
+      .map((w) => byKey.get(`${w.exchange.toUpperCase()}:${w.symbol.toUpperCase()}`))
+      .filter((n): n is FnoUnderlying => Boolean(n?.nextExpiry));
+    const pool = fromWatch.length ? fromWatch : deskScanPool(names);
+    if (!pool.length) return;
+    const batch = Math.min(SCAN_BATCH, pool.length);
+    this.training?.setTracked(pool.length, this.cursor);
+    const deps = {
+      db: this.db,
+      market: this.market,
+      forecasts: this.forecasts,
+      gate: this.gate,
+      read: this.read,
+      journal: this.journal,
+      signals: this.signals,
+      plays: this.plays,
+      ledger: this.ledger,
+      forecastParams: this.forecastParams,
+    };
+    for (let i = 0; i < batch; i += 1) {
+      const desk = pool[(this.cursor + i) % pool.length]!;
+      try {
+        const board = await buildOptionsBoard(deps, {
+          exchange: desk.exchange,
+          symbol: desk.symbol,
+          expiry: desk.nextExpiry ?? null,
+        });
+        this.training?.noteScan({
+          exchange: desk.exchange,
+          symbol: desk.symbol,
+          ok: true,
+          detail: `EOD ${board.eod?.close ?? "—"} · mode ${board.predictionMode ?? "ALGO"}`,
+        });
+        if (this.autopilot) {
+          await this.autopilot.onOptionsBoard(board).catch((err) =>
+            this.log.debug({ err, symbol: desk.symbol }, "paper autopilot options failed"),
+          );
+        }
+      } catch (err) {
+        this.training?.noteScan({
+          exchange: desk.exchange,
+          symbol: desk.symbol,
+          ok: false,
+          detail: err instanceof Error ? err.message : "scan failed",
+        });
+        this.log.warn({ err, symbol: desk.symbol }, "desk board scan failed");
+      }
+    }
+    this.cursor = (this.cursor + batch) % pool.length;
+  }
+
+  private async scanStocks(): Promise<void> {
+    if (!this.read || !this.strategy || !this.autopilot) return;
+    try {
+      const desk = await buildStocksDesk({
         db: this.db,
         market: this.market,
         forecasts: this.forecasts,
+        strategy: this.strategy,
         gate: this.gate,
-        read: this.read,
         journal: this.journal,
-        signals: this.signals,
+        read: this.read,
         plays: this.plays,
-      },
-      { exchange: desk.exchange, symbol: desk.symbol, expiry: desk.nextExpiry ?? null },
-    );
+      });
+      await this.autopilot.onStocksDesk(desk);
+    } catch (err) {
+      this.log.debug({ err }, "stocks desk for autopilot failed");
+    }
   }
+}
+
+export function deskScanPool(names: FnoUnderlying[]): FnoUnderlying[] {
+  const indexes = names.filter((n) => n.kind === "INDEX" && n.nextExpiry);
+  if (indexes.length) {
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    return [...indexes].sort((a, b) => {
+      const ae = a.nextExpiry === today ? 0 : 1;
+      const be = b.nextExpiry === today ? 0 : 1;
+      if (ae !== be) return ae - be;
+      return (a.nextExpiry ?? "").localeCompare(b.nextExpiry ?? "");
+    });
+  }
+  return names.filter((n) => n.nextExpiry);
 }

@@ -8,6 +8,7 @@ import {
   brokerAccounts,
   brokerLoginAttempts,
   brokerSessions,
+  paperAccounts,
   riskProfiles,
   systemEvents,
   users,
@@ -17,6 +18,7 @@ import {
 import type { CryptoService } from "../../../security/crypto.js";
 import type { SessionService } from "../../auth/session.js";
 import type { KiteGateway } from "./kite-gateway.js";
+import type { KiteCredentialsVault } from "./credentials-vault.js";
 
 const LOGIN_TTL_MS = 5 * 60 * 1000;
 
@@ -37,11 +39,13 @@ export class ZerodhaAuthService {
     private readonly sessions: SessionService,
     private readonly kite: KiteGateway,
     private readonly log: Logger,
+    private readonly vault: KiteCredentialsVault,
   ) {}
 
   async startLogin(res: Response, existingSession?: { userId: string }): Promise<string> {
-    if (!this.env.KITE_API_KEY) {
-      throw new AppError("KITE_NOT_CONFIGURED", "KITE_API_KEY is not set", 503);
+    const creds = await this.vault.get();
+    if (!creds) {
+      throw new AppError("KITE_NOT_CONFIGURED", "Add your Zerodha API key and secret first", 503);
     }
     const nonce = this.crypto.randomToken(16);
     await this.db.insert(brokerLoginAttempts).values({
@@ -50,7 +54,7 @@ export class ZerodhaAuthService {
       expiresAt: new Date(Date.now() + LOGIN_TTL_MS),
     });
     const redirectParams = `xt_nonce=${encodeURIComponent(nonce)}`;
-    return this.kite.loginUrl(redirectParams);
+    return await this.kite.loginUrl(redirectParams);
   }
 
   async handleCallback(query: Record<string, unknown>, res: Response): Promise<void> {
@@ -281,6 +285,10 @@ export class ZerodhaAuthService {
       { exchange: "NSE", symbol: "TCS", orderable: true, sortOrder: 5 },
     ];
     await this.db.insert(watchlistItems).values(defaults.map((d) => ({ ...d, watchlistId: watchlist!.id })));
+    const [existingPaper] = await this.db.select().from(paperAccounts).limit(1);
+    if (!existingPaper) {
+      await this.db.insert(paperAccounts).values({ userId, cash: "25000.00", reservedCash: "0" });
+    }
   }
 }
 

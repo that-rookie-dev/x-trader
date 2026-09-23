@@ -2,6 +2,7 @@
 
 import { AdviceCard } from "@/components/AdviceCard";
 import { CandleChart } from "@/components/CandleChart";
+import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
 import type { PlainIdea, Play, QuoteTick, StocksDesk } from "@/lib/desk";
 import { applyTickCandle, mergeCandles } from "@/lib/live";
@@ -149,13 +150,11 @@ export default function StocksPage() {
 
   return (
     <div className="guide">
-      <div className="page-hero">
-        <div>
-          <p className="eyebrow">Stocks</p>
-          <h1>Swing book, same-day overlay</h1>
-          <p className="lede">Instructions only — place buys and sells on Zerodha. We read fills back to learn.</p>
-        </div>
-      </div>
+      <PageHeader
+        kicker="Stocks"
+        title="Swing book, same-day overlay"
+        lede="Instructions only — place buys and sells on Zerodha. We read fills back to learn."
+      />
       {error ? <p className="down">{error}</p> : null}
       {(desk?.plays ?? []).length ? (
         <ul className="signal-tape" data-coach="tape">
@@ -182,21 +181,27 @@ export default function StocksPage() {
       ) : null}
       <div className="lane-col">
         <section data-coach="today">
-          <h2>TODAY</h2>
+          <div className="section-head">
+            <h2>Today</h2>
+          </div>
           {(desk?.today ?? []).map((idea) => (
             <AdviceCard key={`today:${idea.contract}`} idea={idea} />
           ))}
           {desk && (desk.today ?? []).length === 0 ? <div className="empty">No same-day volume breakout right now.</div> : null}
         </section>
         <section data-coach="swing">
-          <h2>Swing / positional</h2>
+          <div className="section-head">
+            <h2>Swing / positional</h2>
+          </div>
           {(desk?.buys ?? []).map((idea) => (
             <AdviceCard key={`buy:${idea.contract}`} idea={idea} />
           ))}
           {desk && desk.buys.length === 0 ? <div className="empty">Nothing looks worth buying today.</div> : null}
         </section>
         <section>
-          <h2>Sell today</h2>
+          <div className="section-head">
+            <h2>Sell today</h2>
+          </div>
           {(desk?.sells ?? []).map((idea) => (
             <AdviceCard key={`sell:${idea.contract}`} idea={idea} />
           ))}

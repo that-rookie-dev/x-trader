@@ -1,4 +1,6 @@
+import { and, eq } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
+import { positions } from "../../db/schema.js";
 import type { ZerodhaReadAdapter } from "../brokers/zerodha/read-adapter.js";
 import type { Idea } from "./levels.js";
 
@@ -21,9 +23,24 @@ export async function loadHeldKeys(db: Database, read: ZerodhaReadAdapter): Prom
   return held;
 }
 
-/** @deprecated Paper is disabled — always empty. */
-export async function paperHeldSymbols(_db: Database): Promise<Set<string>> {
-  return new Set();
+/** Paper positions currently open (training wallet). */
+export async function paperHeldSymbols(db: Database): Promise<Set<string>> {
+  const { longs, shorts } = await paperHeldSides(db);
+  return new Set([...longs, ...shorts]);
+}
+
+export async function paperHeldSides(db: Database): Promise<{ longs: Set<string>; shorts: Set<string> }> {
+  const open = await db
+    .select({ exchange: positions.exchange, symbol: positions.symbol, direction: positions.direction })
+    .from(positions)
+    .where(and(eq(positions.executionMode, "PAPER"), eq(positions.status, "OPEN")));
+  const longs = new Set<string>();
+  const shorts = new Set<string>();
+  for (const row of open) {
+    const target = row.direction === "SHORT" ? shorts : longs;
+    addHeld(target, row.exchange, row.symbol);
+  }
+  return { longs, shorts };
 }
 
 function addHeld(held: Set<string>, exchange: string, symbol: string): void {
@@ -130,7 +147,7 @@ function labelOf(kind: Idea["kind"]): string {
   }
 }
 
-export type AgentMark = "BUY" | "SELL" | "NO_BUY" | "WAIT";
+export type AgentMark = "BUY" | "SELL" | "NO_BUY" | "WAIT" | "CLOSED";
 
 export function markContract(
   ideas: Idea[],

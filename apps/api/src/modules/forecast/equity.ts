@@ -7,7 +7,7 @@ import type { LiveGate } from "../settings/live-gate.js";
 import type { JournalService } from "../journal/service.js";
 import type { ZerodhaReadAdapter } from "../brokers/zerodha/read-adapter.js";
 import { atr, donchian, sma } from "../indicators/index.js";
-import { loadHeldKeys, visibleIdeas, type PlainIdea } from "./desk.js";
+import { loadHeldKeys, paperHeldSymbols, visibleIdeas, type PlainIdea } from "./desk.js";
 import type { Idea } from "./levels.js";
 import { holdUntilAt, type PlayDraft, type PlayStore } from "./plays.js";
 import type { ExpectancySnap } from "../journal/service.js";
@@ -187,7 +187,7 @@ export async function buildStocksDesk(s: {
   const nifty = await s.market.listCandles("NSE", "NIFTY 50", 1440, 260);
   const niftyCloses = nifty.map((c) => c.close);
   const held = await loadHeldKeys(s.db, s.read);
-  const paperHeld = new Set<string>();
+  const paperHeld = await paperHeldSymbols(s.db);
   const memory = await s.journal.expectancyMap();
   const regimes = new Map<string, MarketRegime>();
   const scored: EquityScore[] = [];
@@ -216,10 +216,10 @@ export async function buildStocksDesk(s: {
   const ideas = ranked.map(equityToIdea);
   const buys = visibleIdeas(ideas, held, paperHeld, "CASH")
     .filter((idea) => idea.action === "BUY")
-    .map((idea) => attachScore(idea, ranked));
+    .map((idea) => attachScore(idea, ranked, paperHeld));
   const sells = visibleIdeas(ideas, held, paperHeld, "CASH")
     .filter((idea) => idea.action === "SELL")
-    .map((idea) => attachScore(idea, ranked));
+    .map((idea) => attachScore(idea, ranked, paperHeld));
   const today: PlainIdea[] = [];
   for (const item of watch.filter((w) => w.orderable && w.symbol !== "NIFTY 50")) {
     const ev = await s.strategy.evaluate(item.exchange, item.symbol);
@@ -237,7 +237,7 @@ export async function buildStocksDesk(s: {
       stop: ev.stopLoss ?? null,
       target: ev.targets?.[0] ?? null,
       instrumentType: "EQUITY",
-      canPaper: false,
+      canPaper: !paperHeld.has(item.symbol.toUpperCase()),
       lastPrice: String(ev.entryPrice),
       horizon: "INTRADAY",
       atrStop: ev.stopLoss ?? null,
@@ -285,9 +285,9 @@ export async function buildStocksDesk(s: {
   return { buys, sells, today, plays: boardPlays };
 }
 
-function attachScore(idea: PlainIdea, ranked: EquityScore[]): PlainIdea {
+function attachScore(idea: PlainIdea, ranked: EquityScore[], paperHeld: Set<string>): PlainIdea {
   const row = ranked.find((r) => r.symbol === idea.contract);
-  if (!row) return idea;
+  if (!row) return { ...idea, canPaper: idea.action === "BUY" && !paperHeld.has(idea.contract.toUpperCase()) };
   return {
     ...idea,
     title: row.horizon === "POSITION" ? "Positional add" : "Swing add",
@@ -300,6 +300,6 @@ function attachScore(idea: PlainIdea, ranked: EquityScore[]): PlainIdea {
     atrStop: row.stop,
     rank: row.rank,
     lastPrice: money(row.last, 2),
-    canPaper: false,
+    canPaper: idea.action === "BUY" && !paperHeld.has(idea.contract.toUpperCase()),
   };
 }

@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
+import { showDec, showRupee } from "@/lib/format";
 
 type Profile = { userName: string; clientId: string; email?: string };
 type Funds = { equity: { available: string; usedMargin: string }; asOf: string };
-type Holding = { instrument: { symbol: string; exchange: string }; quantity: string; averagePrice: string; lastPrice?: string; pnl?: string };
+type Holding = {
+  instrument: { symbol: string; exchange: string };
+  quantity: string;
+  averagePrice: string;
+  lastPrice?: string;
+  pnl?: string;
+};
 
 export default function AccountPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -41,16 +49,14 @@ export default function AccountPage() {
 
   return (
     <div className="guide">
-      <div className="page-hero">
-        <div>
-          <p className="eyebrow">Account</p>
-          <h1>Your money</h1>
-          <p className="lede">Real money stays in Zerodha. This app only reads balances and holdings for analysis.</p>
-        </div>
-      </div>
+      <PageHeader
+        kicker="Account"
+        title="Your money"
+        lede="Real money stays in Zerodha. This app only reads balances and holdings for analysis."
+      />
       {loading ? <div className="card muted">Loading…</div> : null}
       {error ? (
-        <div className="card">
+        <div className="card gate-card">
           <strong>Could not load the account.</strong>
           <p className="muted">{error}. Connect again to continue.</p>
         </div>
@@ -64,49 +70,72 @@ export default function AccountPage() {
           </div>
           <div className="card kpi" data-coach="funds">
             <div className="label">Cash available</div>
-            <div className="value">{funds?.equity.available ?? "—"}</div>
+            <div className="value">{funds?.equity.available != null ? showRupee(funds.equity.available) : "—"}</div>
           </div>
           <div className="card kpi">
             <div className="label">Used margin</div>
-            <div className="value">{funds?.equity.usedMargin ?? "—"}</div>
+            <div className="value">{funds?.equity.usedMargin != null ? showRupee(funds.equity.usedMargin) : "—"}</div>
           </div>
         </div>
       ) : null}
       <div className="card" data-coach="read-only">
-        <h2>We only read after you trade</h2>
+        <div className="section-head">
+          <h2>We only read after you trade</h2>
+        </div>
         <p className="muted" data-coach="fill">
-          This app never sends an order. After you buy on Zerodha, dismiss the play on Options or Stocks. We match the fill and learn. A miss is not a win.
+          This app never sends an order. After you buy on Zerodha, dismiss the play on Options or Stocks. We match the
+          fill and learn. A miss is not a win.
         </p>
       </div>
       <div className="card">
-        <h2>Replay a tutorial</h2>
+        <div className="section-head">
+          <h2>Replay a tutorial</h2>
+        </div>
         <p className="muted">Walk the desk again any time. One step, then the next.</p>
         <div className="row" style={{ marginTop: 10, flexWrap: "wrap", gap: 8 }}>
-          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "options" }))}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "options" }))}
+          >
             Options desk
           </button>
-          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "stocks" }))}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "stocks" }))}
+          >
             Stocks
           </button>
-          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "zerodha" }))}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "zerodha" }))}
+          >
             Zerodha
           </button>
-          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "alerts" }))}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => window.dispatchEvent(new CustomEvent("xtrader-coach", { detail: "alerts" }))}
+          >
             Alerts
           </button>
         </div>
       </div>
       <div className="card">
-        <h2>Holdings</h2>
+        <div className="section-head">
+          <h2>Holdings</h2>
+        </div>
         {!holdings ? (
-          <p className="muted">Connect Zerodha to load holdings.</p>
+          <p className="muted">Connect to load holdings.</p>
         ) : holdings.length === 0 ? (
-          <p className="muted">No holdings.</p>
+          <p className="muted">No holdings right now.</p>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Name</th>
+                <th>Symbol</th>
                 <th>Qty</th>
                 <th>Avg</th>
                 <th>LTP</th>
@@ -117,10 +146,12 @@ export default function AccountPage() {
               {holdings.map((row) => (
                 <tr key={`${row.instrument.exchange}:${row.instrument.symbol}`}>
                   <td>{row.instrument.symbol}</td>
-                  <td className="mono">{row.quantity}</td>
-                  <td className="mono">{row.averagePrice}</td>
-                  <td className="mono">{row.lastPrice ?? "—"}</td>
-                  <td className={`mono ${Number(row.pnl ?? 0) >= 0 ? "up" : "down"}`}>{row.pnl ?? "—"}</td>
+                  <td className="mono">{showDec(row.quantity, 0)}</td>
+                  <td className="mono">{showDec(row.averagePrice)}</td>
+                  <td className="mono">{row.lastPrice != null ? showDec(row.lastPrice) : "—"}</td>
+                  <td className={`mono ${Number(row.pnl ?? 0) >= 0 ? "up" : "down"}`}>
+                    {row.pnl != null ? showDec(row.pnl) : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

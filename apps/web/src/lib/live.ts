@@ -1,10 +1,12 @@
-import { clientOptionPnl } from "./charges";
+import { clientOptionPnl, clientOptionPnlShort } from "./charges";
 import type { AgentMark, ChainLeg, OptionsBoard, QuoteTick } from "./desk";
 
 type Bias = "BULLISH" | "BEARISH" | "RANGE";
 
 function money(n: number): string {
-  return n.toFixed(2);
+  const sign = n < 0 ? "-" : "";
+  const [i, f = ""] = String(Math.abs(n)).replace(/,/g, "").split(".");
+  return `${sign}${i || "0"}.${f.slice(0, 2).padEnd(2, "0")}`;
 }
 
 function asBias(value: string | undefined): Bias {
@@ -127,7 +129,11 @@ function compareEod(algoClose: number, aiClose: number, algoBias: Bias, aiBias: 
     : rel <= 0.004
       ? "MIXED"
       : "OPPOSED";
-  const gap = `${(rel * 100).toFixed(2)}% apart`;
+  const gapPct = (() => {
+    const [i, f = ""] = String(Math.abs(rel * 100)).split(".");
+    return `${i || "0"}.${f.slice(0, 2).padEnd(2, "0")}`;
+  })();
+  const gap = `${gapPct}% apart`;
   const hint =
     tag === "ALIGNED"
       ? `same direction · ${gap}`
@@ -154,9 +160,18 @@ function sessionClock(now: Date, expiry: string | null) {
   const mins = istMinutes(now);
   const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const expiryToday = Boolean(expiry && expiry <= today);
-  const cutoff = expiryToday ? mins >= 13 * 60 + 30 : mins >= 15 * 60;
+  const openMin = 9 * 60 + 15;
+  const closeSoonMin = 15 * 60 + 15;
+  const closeMin = 15 * 60 + 30;
+  const closed = mins >= closeMin || mins < openMin;
+  const closingSoon = !closed && mins >= closeSoonMin;
   const late = mins >= 14 * 60 + 30;
-  return { cutoff, netFloor: cutoff ? 150 : late ? 250 : 150, label: cutoff ? "CUTOFF" : expiryToday ? "UNTIL 13:30" : "UNTIL 15:00" };
+  return {
+    cutoff: closed,
+    closingSoon,
+    netFloor: closed ? 150 : late ? 250 : 150,
+    label: closed ? (mins >= closeMin ? "CLOSED" : "PRE-OPEN") : closingSoon ? "LAST 15M" : "UNTIL 15:30",
+  };
 }
 
 function mapInvalidated(bias: Bias, last: number, expectedLow: number, expectedHigh: number) {
@@ -185,70 +200,101 @@ function repriceLeg(
   const exit = Number(est.eodPremium);
   const qty = Math.max(1, leg.lotSize ?? 1);
   const pnl = clientOptionPnl({ entry, exit, qty });
+  const shortPnl = clientOptionPnlShort({ entry, exit, qty });
   const net = Number(pnl.net);
+  const shortNet = Number(shortPnl.net);
   const want = tradeDirection(spot, eodSpot);
   const cheap = isCheapSide(kind, strike, spot);
   const inPlay = isInPlay(kind, strike, spot, eodSpot);
   const liquid = liquidEnough(leg.oi, leg.volume);
-  let mark: AgentMark = leg.mark === "SELL" ? "SELL" : "NO_BUY";
+  const sideNow = spotMoneyness(kind, strike, spot);
+  const heldSide = leg.heldSide ?? null;
+  let mark: AgentMark = "NO_BUY";
   let why = leg.why;
-  if (mark === "SELL") {
-    why = "You already hold this. Helper wants it closed.";
-  } else if (!cheap) {
-    why = kind === "PE" ? "ITM PE sits above spot — premium is too high. Buy a PE below the index." : "ITM CE sits below spot — premium is too high. Buy a CE above the index.";
-    mark = "NO_BUY";
-  } else if (want && want !== kind) {
-    why = want === "PE" ? "Index looks lower by EOD. Buy PE below spot, not this CE." : "Index looks higher by EOD. Buy CE above spot, not this PE.";
-    mark = "NO_BUY";
-  } else if (!inPlay) {
-    why = "Too far from the EOD close — this strike is likely worthless or already spent.";
-    mark = "NO_BUY";
+  if (heldSide === "LONG") {
+    mark = "SELL";
+    why = "You hold long — helper wants this closed (or edge faded).";
+  } else if (heldSide === "SHORT") {
+    if (net >= gates.netFloor || shortNet < gates.netFloor) {
+      mark = "BUY";
+      why = "You are short — cover (premium rising / write edge gone).";
+    } else {
+      mark = "WAIT";
+      why = `Short working — keep write if premium fades to ~${money(exit)}.`;
+    }
   } else if (!liquid) {
     why = "No tape / no OI — skip this weekly.";
     mark = "NO_BUY";
   } else if (gates.invalidated) {
     why = "Map invalidated — spot broke the session band against the bias.";
     mark = "NO_BUY";
-  } else if (gates.cutoff) {
-    why = "Session cutoff — no new buys.";
-    mark = "NO_BUY";
   } else if (net >= gates.netFloor) {
     mark = "BUY";
-    why = kind === "PE" ? `OTM PE below spot. Expected net ₹${pnl.net} if the index closes near ${money(eodSpot)}.` : `OTM CE above spot. Expected net ₹${pnl.net} if the index closes near ${money(eodSpot)}.`;
+    const bits = [`${sideNow} ${kind}`, `net ₹${pnl.net} if close ~${money(eodSpot)}`];
+    if (want && want !== kind) bits.push(`against ${want} lean`);
+    else if (want === kind) bits.push(`${want} lean`);
+    else bits.push("flat tape");
+    if (!cheap) bits.push("ITM premium");
+    else if (!inPlay) bits.push("wide of EOD path");
+    why = bits.join(" · ");
+  } else if (shortNet >= gates.netFloor) {
+    mark = "SELL";
+    why = `WRITE ${sideNow} ${kind} · net ₹${shortPnl.net} if buy back ~${money(exit)}`;
   } else {
     mark = "NO_BUY";
-    why = "Expected EOD move does not cover charges.";
+    if (want && want !== kind) why = `Index leans ${want}. Buy net ₹${pnl.net} / write net ₹${shortPnl.net}.`;
+    else why = "Expected EOD move does not cover charges.";
+  }
+  if (!heldSide && gates.cutoff) {
+    why =
+      mark === "BUY" || mark === "SELL"
+        ? `CLOSED — market hours ended (would ${mark}: ${why})`
+        : `CLOSED — market hours ended. ${why}`;
+    mark = "CLOSED";
   }
   return {
     ...leg,
     eodPremium: est.eodPremium,
-    moneyness: spotMoneyness(kind, strike, spot),
+    moneyness: sideNow,
     eodMoneyness: est.eodMoneyness,
     pnl,
+    shortPnl,
     mark,
     why,
-    canPaper: mark === "BUY" || (mark === "SELL" && leg.canPaper),
+    canPaper:
+      !gates.cutoff &&
+      ((mark === "BUY" && heldSide == null) ||
+        (mark === "SELL" && heldSide == null) ||
+        (heldSide === "LONG" && mark === "SELL") ||
+        (heldSide === "SHORT" && mark === "BUY")),
+    heldSide,
   };
 }
 
 function rebuildBuys(board: OptionsBoard, eodClose: string): OptionsBoard["buys"] {
   const liveSpot = Number(board.lastPrice);
+  const eodSpot = Number(eodClose);
   const ranked = board.rows.flatMap((row) => [
     row.ce ? { kind: "CE" as const, strike: row.strike, leg: row.ce } : null,
     row.pe ? { kind: "PE" as const, strike: row.strike, leg: row.pe } : null,
   ]).filter((item): item is { kind: "CE" | "PE"; strike: number; leg: ChainLeg } => Boolean(item));
+  const wantSide =
+    eodSpot <= liveSpot - Math.max(liveSpot * 0.0006, 8) ? ("PE" as const) : eodSpot >= liveSpot + Math.max(liveSpot * 0.0006, 8) ? ("CE" as const) : null;
   const roi = (leg: ChainLeg) => {
     const cost = Number(leg.pnl?.buyNotional ?? 0);
     return cost > 0 ? Number(leg.pnl?.net ?? 0) / cost : 0;
   };
+  const buyScore = (item: { kind: "CE" | "PE"; strike: number; leg: ChainLeg }) => {
+    const r = roi(item.leg);
+    const sideBoost = wantSide == null ? 0 : wantSide === item.kind ? 0.08 : -0.04;
+    const near = 1 - Math.min(1, Math.abs(item.strike - liveSpot) / Math.max(liveSpot * 0.02, 1));
+    const net = Number(item.leg.pnl?.net ?? 0);
+    return r * 10 + sideBoost + near * 0.05 + Math.min(Math.max(net, 0), 5000) / 5000;
+  };
   return ranked
     .filter((item) => item.leg.mark === "BUY")
-    .sort((a, b) => {
-      const byRoi = roi(b.leg) - roi(a.leg);
-      if (Math.abs(byRoi) > 0.01) return byRoi;
-      return Math.abs(a.strike - liveSpot) - Math.abs(b.strike - liveSpot);
-    })
-    .slice(0, 4)
+    .sort((a, b) => buyScore(b) - buyScore(a))
+    .slice(0, 12)
     .map((item) => ({
       lane: "FNO" as const,
       kind: item.kind,
@@ -263,6 +309,7 @@ function rebuildBuys(board: OptionsBoard, eodClose: string): OptionsBoard["buys"
       instrumentType: "OPTION" as const,
       canPaper: item.leg.canPaper,
       lastPrice: item.leg.lastPrice ?? undefined,
+      edge: item.leg.pnl?.net ?? null,
     }));
 }
 

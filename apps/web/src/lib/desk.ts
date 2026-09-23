@@ -18,9 +18,10 @@ export type PlainIdea = {
   rsVsNifty?: number | null;
   atrStop?: string | null;
   rank?: number | null;
+  edge?: string | null;
 };
 
-export type AgentMark = "BUY" | "SELL" | "NO_BUY" | "WAIT";
+export type AgentMark = "BUY" | "SELL" | "NO_BUY" | "WAIT" | "CLOSED";
 
 export type ChargeLine = {
   brokerage: string;
@@ -57,6 +58,8 @@ export type ChainLeg = {
   moneyness?: "ITM" | "ATM" | "OTM";
   eodMoneyness?: "ITM" | "ATM" | "OTM";
   pnl?: OptionPnl;
+  shortPnl?: OptionPnl;
+  heldSide?: "LONG" | "SHORT" | null;
   oi?: number | null;
   volume?: number | null;
 };
@@ -80,6 +83,13 @@ export type OptionsBoard = {
   stance: string;
   bias: string;
   eod?: { close: string; low: string; high: string; note: string };
+  eodAi?: { close: string; low: string; high: string; note: string };
+  activeClose?: string | number | null;
+  predictionMode?: "ALGO" | "AI";
+  learning?: {
+    algo: { mae: number | null; hitRate: number | null; lastTuned: string | null; delta: Record<string, number> };
+    ai: { mae: number | null; hitRate: number | null; lastTuned: string | null; delta: Record<string, number> };
+  } | null;
   levels?: { supports: string[]; resistances: string[]; magnet: string };
   session?: { expectedLow: string; expectedHigh: string; magnet: string; pull?: number; invalidation?: string };
   desk?: {
@@ -117,6 +127,15 @@ export type OptionsBoard = {
   buys: PlainIdea[];
   sells: PlainIdea[];
   plays?: Play[];
+  paramsVersion?: number | null;
+  marketClosed?: boolean;
+  predictionScore?: {
+    predicted: number;
+    actual: number | null;
+    errorPct: number | null;
+    kind: string;
+    status: string;
+  } | null;
 };
 
 export type OptionsAdvice = {

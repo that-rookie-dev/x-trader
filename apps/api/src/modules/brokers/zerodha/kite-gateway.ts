@@ -36,7 +36,7 @@ export interface KiteQuote {
 }
 
 export interface KiteGateway {
-  loginUrl(redirectParams?: string): string;
+  loginUrl(redirectParams?: string): string | Promise<string>;
   generateSession(requestToken: string): Promise<KiteSession>;
   invalidateAccessToken(accessToken: string): Promise<void>;
   getProfile(accessToken: string): Promise<KiteProfile>;

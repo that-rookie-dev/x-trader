@@ -1,79 +1,132 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { AppError, d, money, type ApprovedTrade, type ExecutionAcknowledgement } from "@xtrader/domain";
 import type { Database } from "../../db/client.js";
-import { executions, orders, paperAccounts, positions, quotesCache } from "../../db/schema.js";
+import { executions, orders, paperAccounts, positions, quotesCache, users } from "../../db/schema.js";
 
 const SLIPPAGE = d("0.0005");
 const FEE_BPS = d("0.0003");
+export const PAPER_TOPUP = "25000.00";
+
+export type PaperCloseResult = {
+  positionId: string;
+  exchange: string;
+  symbol: string;
+  quantity: string;
+  entry: string;
+  exit: string;
+  netPnl: string;
+  fees: string;
+  meta: Record<string, unknown>;
+  reason: string;
+};
 
 export class PaperExecutionAdapter {
   constructor(private readonly db: Database) {}
 
-  async submit(trade: ApprovedTrade): Promise<ExecutionAcknowledgement> {
-    if (trade.executionMode !== "PAPER") {
-      throw new AppError("MODE_MISMATCH", "Paper adapter received a live trade", 500);
-    }
-    const quote = await this.quote(trade.instrument.exchange, trade.instrument.symbol);
-    if (!quote) throw new AppError("NO_QUOTE", "No market data to fill the paper order", 422);
+  async ensureAccount(preferredUserId?: string | null) {
+    const [existing] = await this.db.select().from(paperAccounts).limit(1);
+    if (existing) return existing;
 
-    const last = d(quote.lastPrice);
-    let fill = last;
-    if (trade.direction === "LONG") {
-      fill = last.mul(d(1).plus(SLIPPAGE));
-      if (trade.entryType === "LIMIT" && fill.gt(d(trade.entryPrice))) {
-        fill = d(trade.entryPrice);
-        if (last.gt(d(trade.entryPrice))) {
-          const [order] = await this.db
-            .insert(orders)
-            .values({
-              executionMode: "PAPER",
-              accountId: trade.accountId,
-              intentId: trade.intentId,
-              exchange: trade.instrument.exchange,
-              symbol: trade.instrument.symbol,
-              side: "BUY",
-              quantity: trade.quantity,
-              orderType: "LIMIT",
-              limitPrice: trade.entryPrice,
-              status: "ACKNOWLEDGED",
-            })
-            .returning();
-          return { attemptId: order!.id, status: "ACKNOWLEDGED", message: "Limit resting; last price above limit" };
-        }
+    let userId = preferredUserId ?? null;
+    if (!userId) {
+      const [user] = await this.db.select().from(users).limit(1);
+      if (user) userId = user.id;
+      else {
+        const [created] = await this.db.insert(users).values({ displayName: "desk" }).returning();
+        userId = created!.id;
       }
     }
 
-    const notional = fill.mul(trade.quantity);
+    const [account] = await this.db
+      .insert(paperAccounts)
+      .values({ userId, cash: PAPER_TOPUP, reservedCash: "0" })
+      .returning();
+    return account!;
+  }
+
+  async topup(amount = PAPER_TOPUP) {
+    const account = await this.ensureAccount();
+    const next = money(d(account.cash).plus(d(amount)));
+    const [row] = await this.db
+      .update(paperAccounts)
+      .set({ cash: next, updatedAt: new Date() })
+      .where(eq(paperAccounts.id, account.id))
+      .returning();
+    return row!;
+  }
+
+  async reset() {
+    const account = await this.ensureAccount();
+    const open = await this.db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.executionMode, "PAPER"), eq(positions.status, "OPEN")));
+    for (const pos of open) {
+      await this.closePosition(pos.id, "RESET");
+    }
+    const [row] = await this.db
+      .update(paperAccounts)
+      .set({ cash: PAPER_TOPUP, reservedCash: "0", updatedAt: new Date() })
+      .where(eq(paperAccounts.id, account.id))
+      .returning();
+    return row!;
+  }
+
+  async state() {
+    const account = await this.ensureAccount();
+    await this.markToMarket();
+    const open = await this.db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.executionMode, "PAPER"), eq(positions.status, "OPEN")))
+      .orderBy(desc(positions.openedAt));
+    const recent = await this.db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.executionMode, "PAPER"), eq(positions.status, "CLOSED")))
+      .orderBy(desc(positions.closedAt))
+      .limit(40);
+    return { account, positions: open, closed: recent };
+  }
+
+  async buyLong(input: {
+    exchange: string;
+    symbol: string;
+    quantity: number;
+    meta?: Record<string, unknown>;
+  }): Promise<{ positionId: string; fillPx: string; fees: string; accountId: string }> {
+    const account = await this.ensureAccount();
+    if (input.quantity <= 0) throw new AppError("BAD_QTY", "Quantity must be positive", 400);
+    const quote = await this.quote(input.exchange, input.symbol);
+    if (!quote) throw new AppError("NO_QUOTE", "No market data to fill the paper order", 422);
+
+    const fill = d(quote.lastPrice).mul(d(1).plus(SLIPPAGE));
+    const notional = fill.mul(input.quantity);
     const fees = notional.mul(FEE_BPS);
     const cashNeeded = notional.plus(fees);
 
     return this.db.transaction(async (tx) => {
-      const [account] = await tx.select().from(paperAccounts).limit(1);
-      if (!account) throw new AppError("NO_PAPER_ACCOUNT", "Paper account missing", 500);
-      if (d(account.cash).lt(cashNeeded)) {
-        throw new AppError("INSUFFICIENT_CAPITAL", "Paper cash is insufficient", 422);
+      const [fresh] = await tx.select().from(paperAccounts).where(eq(paperAccounts.id, account.id)).limit(1);
+      if (!fresh) throw new AppError("NO_PAPER_ACCOUNT", "Paper account missing", 500);
+      if (d(fresh.cash).lt(cashNeeded)) {
+        throw new AppError("INSUFFICIENT_CAPITAL", "Paper cash is insufficient — Add ₹25k to continue training", 422);
       }
       await tx
         .update(paperAccounts)
-        .set({
-          cash: money(d(account.cash).minus(cashNeeded)),
-          updatedAt: new Date(),
-        })
-        .where(eq(paperAccounts.id, account.id));
+        .set({ cash: money(d(fresh.cash).minus(cashNeeded)), updatedAt: new Date() })
+        .where(eq(paperAccounts.id, fresh.id));
 
       const [order] = await tx
         .insert(orders)
         .values({
           executionMode: "PAPER",
-          accountId: trade.accountId,
-          intentId: trade.intentId,
-          exchange: trade.instrument.exchange,
-          symbol: trade.instrument.symbol,
-          side: trade.direction === "LONG" ? "BUY" : "SELL",
-          quantity: trade.quantity,
-          filledQuantity: trade.quantity,
-          orderType: trade.entryType,
-          limitPrice: trade.entryPrice,
+          accountId: fresh.id,
+          exchange: input.exchange,
+          symbol: input.symbol,
+          side: "BUY",
+          quantity: input.quantity,
+          filledQuantity: input.quantity,
+          orderType: "MARKET",
           averagePrice: money(fill, 4),
           status: "FILLED",
           fees: money(fees, 4),
@@ -82,32 +135,138 @@ export class PaperExecutionAdapter {
 
       await tx.insert(executions).values({
         orderId: order!.id,
-        quantity: trade.quantity,
+        quantity: input.quantity,
         price: money(fill, 4),
         fees: money(fees, 4),
       });
 
-      await tx.insert(positions).values({
-        executionMode: "PAPER",
-        accountId: trade.accountId,
-        exchange: trade.instrument.exchange,
-        symbol: trade.instrument.symbol,
-        direction: trade.direction,
-        quantity: String(trade.quantity),
-        averageEntry: money(fill, 4),
-        currentPrice: money(fill, 4),
-        stopLoss: trade.stopLoss,
-        targets: trade.targets,
-        unrealisedPnl: "0",
-        fees: money(fees, 4),
-        status: "OPEN",
-      });
+      const [pos] = await tx
+        .insert(positions)
+        .values({
+          executionMode: "PAPER",
+          accountId: fresh.id,
+          exchange: input.exchange,
+          symbol: input.symbol,
+          direction: "LONG",
+          quantity: String(input.quantity),
+          averageEntry: money(fill, 4),
+          currentPrice: money(fill, 4),
+          stopLoss: null,
+          targets: [],
+          unrealisedPnl: "0",
+          fees: money(fees, 4),
+          status: "OPEN",
+          meta: input.meta ?? {},
+        })
+        .returning();
 
-      return { attemptId: order!.id, status: "FILLED", message: "Paper fill" };
+      return {
+        positionId: pos!.id,
+        fillPx: money(fill, 4),
+        fees: money(fees, 4),
+        accountId: fresh.id,
+      };
     });
   }
 
-  async closePosition(positionId: string, reason: string): Promise<void> {
+  async sellShort(input: {
+    exchange: string;
+    symbol: string;
+    quantity: number;
+    meta?: Record<string, unknown>;
+  }): Promise<{ positionId: string; fillPx: string; fees: string; accountId: string }> {
+    const account = await this.ensureAccount();
+    if (input.quantity <= 0) throw new AppError("BAD_QTY", "Quantity must be positive", 400);
+    const quote = await this.quote(input.exchange, input.symbol);
+    if (!quote) throw new AppError("NO_QUOTE", "No market data to fill the paper order", 422);
+
+    // Sell filled slightly worse; credit premium. Hold loose margin = 20% of notional.
+    const fill = d(quote.lastPrice).mul(d(1).minus(SLIPPAGE));
+    const notional = fill.mul(input.quantity);
+    const fees = notional.mul(FEE_BPS);
+    const margin = notional.mul(d("0.20"));
+    const cashNeeded = margin.plus(fees);
+
+    return this.db.transaction(async (tx) => {
+      const [fresh] = await tx.select().from(paperAccounts).where(eq(paperAccounts.id, account.id)).limit(1);
+      if (!fresh) throw new AppError("NO_PAPER_ACCOUNT", "Paper account missing", 500);
+      if (d(fresh.cash).lt(cashNeeded)) {
+        throw new AppError("INSUFFICIENT_CAPITAL", "Paper cash is insufficient for short margin — Add ₹25k", 422);
+      }
+      // Debit margin+fees, credit sale proceeds → net = cash - margin - fees + notional
+      const nextCash = d(fresh.cash).minus(margin).minus(fees).plus(notional);
+      await tx
+        .update(paperAccounts)
+        .set({ cash: money(nextCash), updatedAt: new Date() })
+        .where(eq(paperAccounts.id, fresh.id));
+
+      const [order] = await tx
+        .insert(orders)
+        .values({
+          executionMode: "PAPER",
+          accountId: fresh.id,
+          exchange: input.exchange,
+          symbol: input.symbol,
+          side: "SELL",
+          quantity: input.quantity,
+          filledQuantity: input.quantity,
+          orderType: "MARKET",
+          averagePrice: money(fill, 4),
+          status: "FILLED",
+          fees: money(fees, 4),
+        })
+        .returning();
+
+      await tx.insert(executions).values({
+        orderId: order!.id,
+        quantity: input.quantity,
+        price: money(fill, 4),
+        fees: money(fees, 4),
+      });
+
+      const [pos] = await tx
+        .insert(positions)
+        .values({
+          executionMode: "PAPER",
+          accountId: fresh.id,
+          exchange: input.exchange,
+          symbol: input.symbol,
+          direction: "SHORT",
+          quantity: String(input.quantity),
+          averageEntry: money(fill, 4),
+          currentPrice: money(fill, 4),
+          stopLoss: null,
+          targets: [],
+          unrealisedPnl: "0",
+          fees: money(fees, 4),
+          status: "OPEN",
+          meta: { ...(input.meta ?? {}), margin: money(margin) },
+        })
+        .returning();
+
+      return {
+        positionId: pos!.id,
+        fillPx: money(fill, 4),
+        fees: money(fees, 4),
+        accountId: fresh.id,
+      };
+    });
+  }
+
+  async submit(trade: ApprovedTrade): Promise<ExecutionAcknowledgement> {
+    if (trade.executionMode !== "PAPER") {
+      throw new AppError("MODE_MISMATCH", "Paper adapter received a live trade", 500);
+    }
+    const fill = await this.buyLong({
+      exchange: trade.instrument.exchange,
+      symbol: trade.instrument.symbol,
+      quantity: trade.quantity,
+      meta: { intentId: trade.intentId, approvalId: trade.approvalId },
+    });
+    return { attemptId: fill.positionId, status: "FILLED", message: "Paper fill" };
+  }
+
+  async closePosition(positionId: string, reason: string): Promise<PaperCloseResult> {
     const [pos] = await this.db.select().from(positions).where(eq(positions.id, positionId)).limit(1);
     if (!pos || pos.status === "CLOSED") throw new AppError("POSITION_NOT_OPEN", "Position is not open", 404);
     if (pos.executionMode !== "PAPER") throw new AppError("MODE_MISMATCH", "Not a paper position", 400);
@@ -115,9 +274,11 @@ export class PaperExecutionAdapter {
     const px = d(quote?.lastPrice ?? pos.currentPrice ?? pos.averageEntry);
     const exit = pos.direction === "LONG" ? px.mul(d(1).minus(SLIPPAGE)) : px.mul(d(1).plus(SLIPPAGE));
     const qty = d(pos.quantity);
-    const pnl = exit.minus(pos.averageEntry).mul(qty);
+    const pnl =
+      pos.direction === "LONG" ? exit.minus(pos.averageEntry).mul(qty) : d(pos.averageEntry).minus(exit).mul(qty);
     const fees = exit.mul(qty).mul(FEE_BPS);
     const net = pnl.minus(fees);
+    const marginHeld = d(String((pos.meta as { margin?: string } | null)?.margin ?? "0"));
 
     await this.db.transaction(async (tx) => {
       const [order] = await tx
@@ -156,13 +317,30 @@ export class PaperExecutionAdapter {
         .where(eq(positions.id, positionId));
       const [account] = await tx.select().from(paperAccounts).limit(1);
       if (account) {
-        const proceeds = exit.mul(qty).minus(fees);
+        // LONG close: credit sale. SHORT cover: debit buyback, release margin.
+        const delta =
+          pos.direction === "LONG"
+            ? exit.mul(qty).minus(fees)
+            : marginHeld.minus(exit.mul(qty)).minus(fees);
         await tx
           .update(paperAccounts)
-          .set({ cash: money(d(account.cash).plus(proceeds)), updatedAt: new Date() })
+          .set({ cash: money(d(account.cash).plus(delta)), updatedAt: new Date() })
           .where(eq(paperAccounts.id, account.id));
       }
     });
+
+    return {
+      positionId,
+      exchange: pos.exchange,
+      symbol: pos.symbol,
+      quantity: String(pos.quantity),
+      entry: String(pos.averageEntry),
+      exit: money(exit, 4),
+      netPnl: money(net, 4),
+      fees: money(fees, 4),
+      meta: (pos.meta ?? {}) as Record<string, unknown>,
+      reason,
+    };
   }
 
   async markToMarket(): Promise<void> {
@@ -171,12 +349,29 @@ export class PaperExecutionAdapter {
       const quote = await this.quote(pos.exchange, pos.symbol);
       if (!quote) continue;
       const px = d(quote.lastPrice);
-      const pnl = px.minus(pos.averageEntry).mul(pos.quantity);
+      const pnl =
+        pos.direction === "LONG"
+          ? px.minus(pos.averageEntry).mul(pos.quantity)
+          : d(pos.averageEntry).minus(px).mul(pos.quantity);
       await this.db
         .update(positions)
         .set({ currentPrice: money(px, 4), unrealisedPnl: money(pnl, 4) })
         .where(eq(positions.id, pos.id));
     }
+  }
+
+  async openSymbols(): Promise<Set<string>> {
+    const open = await this.db
+      .select({ exchange: positions.exchange, symbol: positions.symbol })
+      .from(positions)
+      .where(and(eq(positions.executionMode, "PAPER"), eq(positions.status, "OPEN")));
+    const held = new Set<string>();
+    for (const row of open) {
+      const s = row.symbol.toUpperCase();
+      held.add(s);
+      held.add(`${row.exchange.toUpperCase()}:${s}`);
+    }
+    return held;
   }
 
   private async quote(exchange: string, symbol: string) {

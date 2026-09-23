@@ -19,8 +19,14 @@ import {
   underlyingFnoName,
 } from "./levels.js";
 import { applyAiStudy, predictEodSpot } from "./eod.js";
+import { istMinutes, MARKET_CLOSE_MIN } from "./chain-tape.js";
+import type { EodFeatures } from "../learning/params.js";
 import { buildDeskModel } from "./model.js";
 import { equityToIdea, scoreEquity } from "./equity.js";
+import type { StudyTraceHandler } from "../ai/study-trace.js";
+import type { ForecastParamsStore } from "../learning/params-store.js";
+import type { PredictionLedger } from "../learning/ledger.js";
+import type { AutoTuner } from "../learning/tuner.js";
 
 export class ForecastEngine {
   constructor(
@@ -29,6 +35,9 @@ export class ForecastEngine {
     private readonly research: ResearchService,
     private readonly ai: AiService,
     private readonly risk: RiskService,
+    private readonly forecastParams?: ForecastParamsStore,
+    private readonly ledger?: PredictionLedger,
+    private readonly tuner?: AutoTuner,
   ) {}
 
   async latest(): Promise<Array<Forecast & { updatedAt: string; autoEnabled: boolean }>> {
@@ -82,7 +91,9 @@ export class ForecastEngine {
     symbol: string,
     mode: "full" | "live" | "study" = "full",
     expiryDate?: string | null,
+    onTrace?: StudyTraceHandler,
   ): Promise<Forecast> {
+    onTrace?.({ kind: "phase", label: "Reading tape", detail: `${exchange}:${symbol}` });
     if (mode === "full") await this.market.ensureHistoryPublic(exchange, symbol);
     const daily = await this.market.listCandles(exchange, symbol, 1440, 260);
     const fifteen = await this.market.listCandles(exchange, symbol, 15, 96);
@@ -111,6 +122,11 @@ export class ForecastEngine {
             summary: stored.evidence.news,
           }
         : await this.research.study(symbol);
+    onTrace?.({
+      kind: "phase",
+      label: mode === "live" ? "Reusing last research" : "News & research",
+      detail: research.summary,
+    });
     const model = buildDeskModel({
       last: last || 1,
       daily,
@@ -230,6 +246,15 @@ export class ForecastEngine {
     };
 
     if (mode === "study") {
+      const fp = this.forecastParams ? await this.forecastParams.get(exchange, symbol) : null;
+      const algoParams = fp?.algo.params;
+      const aiParams = fp?.ai.params;
+      const studyFeatures: EodFeatures = {
+        vwap: model.vwap ?? null,
+        orbHigh: model.orb?.high ?? null,
+        orbLow: model.orb?.low ?? null,
+        minutesToClose: Math.max(0, MARKET_CLOSE_MIN - istMinutes(new Date())),
+      };
       const algoEod = predictEodSpot({
         last,
         bias,
@@ -240,29 +265,44 @@ export class ForecastEngine {
         resistances: model.resistances.map(Number),
         magnets: [model.vwap, model.cpr?.pivot, model.orb?.high, model.orb?.low].filter((n): n is number => n != null),
         pull: model.pull,
+        params: algoParams ?? undefined,
+        features: studyFeatures,
+      });
+      onTrace?.({
+        kind: "phase",
+        label: "Session map ready",
+        detail: `${bias} · algo close ${algoEod.close} · band ${session.expectedLow}–${session.expectedHigh}`,
       });
       const pack = research as {
         headlines?: Array<{ title: string; snippet?: string }>;
         pages?: Array<{ title?: string; text: string }>;
       };
-      const result = await this.ai.studyEod({
-        symbol,
-        last,
-        band: { low: Number(session.expectedLow), high: Number(session.expectedHigh), magnet: Number(session.magnet) },
-        levels: {
-          supports: model.supports,
-          resistances: model.resistances,
-          pivot: model.cpr?.pivot ?? null,
-          priorHigh: model.cpr?.r1 ?? null,
-          priorLow: model.cpr?.s1 ?? null,
-          priorClose: model.cpr?.pivot ?? null,
+      onTrace?.({ kind: "phase", label: "Calling model", detail: "Streaming study request" });
+      const result = await this.ai.studyEod(
+        {
+          symbol,
+          last,
+          band: { low: Number(session.expectedLow), high: Number(session.expectedHigh), magnet: Number(session.magnet) },
+          levels: {
+            supports: model.supports,
+            resistances: model.resistances,
+            pivot: model.cpr?.pivot ?? null,
+            priorHigh: model.cpr?.r1 ?? null,
+            priorLow: model.cpr?.s1 ?? null,
+            priorClose: model.cpr?.pivot ?? null,
+          },
+          algo: { bias, close: algoEod.close, confidence, score: model.score, signals: model.signals.map((s) => `${s.name}:${s.vote}`) },
+          technical: `${forecast.evidence.technical} ${forecast.path.scenario}`,
+          headlines: pack.headlines ?? [],
+          pages: pack.pages ?? [],
+          atm: deriv.call?.strike ?? deriv.put?.strike ?? null,
+          formulaParams: aiParams ?? algoParams ?? undefined,
+          algoParams: algoParams ?? undefined,
+          aiDelta: fp?.ai.delta,
+          paramsVersion: fp?.version,
         },
-        algo: { bias, close: algoEod.close, confidence, score: model.score, signals: model.signals.map((s) => `${s.name}:${s.vote}`) },
-        technical: `${forecast.evidence.technical} ${forecast.path.scenario}`,
-        headlines: pack.headlines ?? [],
-        pages: pack.pages ?? [],
-        atm: deriv.call?.strike ?? deriv.put?.strike ?? null,
-      });
+        onTrace,
+      );
       if (result.draft) {
         const priced = applyAiStudy({
           last,
@@ -288,10 +328,64 @@ export class ForecastEngine {
         forecast.evidence.llm = result.draft.why;
         forecast.evidence.aiError = undefined;
         forecast.path.scenario = `${forecast.path.scenario} AI: ${result.draft.why}`.slice(0, 1800);
+        if (result.paramDelta && this.tuner) {
+          const sessionDate = this.ledger?.sessionDateIst() ?? new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+          void this.tuner.considerAiDelta(exchange, symbol, sessionDate, result.paramDelta).catch(() => undefined);
+        }
+        if (this.ledger) {
+          const sessionDate = this.ledger.sessionDateIst();
+          void this.ledger
+            .record({
+              kind: "EOD_AI",
+              exchange,
+              symbol,
+              sessionDate,
+              predictedClose: Number(priced.close),
+              predictedDirection: result.draft.direction,
+              entryPrice: last,
+              paramsSnapshot: aiParams ?? undefined,
+              paramsVersion: fp?.version,
+              payload: {
+                last,
+                expectedLow: Number(session.expectedLow),
+                expectedHigh: Number(session.expectedHigh),
+                magnet: Number(session.magnet),
+                pull: result.draft.pull,
+                ...studyFeatures,
+              },
+            })
+            .catch(() => undefined);
+        }
       } else {
         forecast.evidence.aiStudy = stored?.evidence.aiStudy;
         forecast.evidence.aiError = result.error ?? "Active model did not return a study.";
         forecast.evidence.llm = forecast.evidence.aiError;
+      }
+      if (this.ledger) {
+        const sessionDate = this.ledger.sessionDateIst();
+        void this.ledger
+          .record({
+            kind: "EOD_ALGO",
+            exchange,
+            symbol,
+            sessionDate,
+            predictedClose: Number(algoEod.close),
+            predictedDirection: bias,
+            entryPrice: last,
+            paramsSnapshot: algoParams ?? undefined,
+            paramsVersion: fp?.version,
+            payload: {
+              last,
+              expectedLow: Number(session.expectedLow),
+              expectedHigh: Number(session.expectedHigh),
+              magnet: Number(session.magnet),
+              pull: model.pull,
+              supports: model.supports.map(Number),
+              resistances: model.resistances.map(Number),
+              ...studyFeatures,
+            },
+          })
+          .catch(() => undefined);
       }
     } else if (stored?.evidence) {
       forecast.evidence.llm = stored.evidence.llm;

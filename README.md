@@ -23,10 +23,11 @@ echo "SESSION_SECRET=$(openssl rand -base64 48)" >> .env
 echo "TOKEN_ENCRYPTION_KEY_BASE64=$(openssl rand -base64 32)" >> .env
 ```
 
-Set `KITE_API_KEY`, `KITE_API_SECRET`, and optionally `KITE_ALLOWED_CLIENT_ID`.
-The Kite app redirect URL must be exactly:
+Kite API key and secret are entered in the **first-run UI** (encrypted vault). Do not put them in `.env`.
 
-`http://127.0.0.1:3000/zerodha/callback`
+In your Kite Connect app, set the redirect URL exactly to:
+
+`http://localhost:3456/zerodha/callback`
 
 ```bash
 npm install
@@ -34,21 +35,29 @@ npm run build -w @xtrader/domain
 npm test
 ```
 
-## Run (development)
+## Run (production)
+
+Build once, then start API and web:
+
+```bash
+npm run build
+```
 
 Terminal 1:
 
 ```bash
-npm run dev:api
+npm run start:api
 ```
 
 Terminal 2:
 
 ```bash
-npm run dev:web
+npm run start:web
 ```
 
-Open `http://127.0.0.1:3000`, connect Zerodha, use Options / Stocks for instructions, dismiss plays after you trade.
+Open `http://localhost:3456`, enter Kite credentials if prompted, then connect Zerodha. Use Options / Stocks for instructions; dismiss plays after you trade. Revoke API credentials later from **Settings**.
+
+`npm run dev:api` / `npm run dev:web` also start production (not Next/tsx watch).
 
 ## CLI
 
@@ -72,7 +81,11 @@ npm test
 
 ## Install on a server (no Docker)
 
-See [docs/install.md](docs/install.md).
+```bash
+curl -fsSL https://github.com/that-rookie-dev/x-trader/releases/latest/download/install.sh | bash
+```
+
+Then open **http://localhost:3456**. Full notes: [docs/install.md](docs/install.md).
 
 ## Docs
 

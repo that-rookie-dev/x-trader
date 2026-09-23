@@ -5,9 +5,9 @@ const boolish = z
   .transform((value) => value === true || value === "true" || value === "1");
 
 export const envSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("production"),
   APP_NAME: z.string().default("xTrader"),
-  APP_ORIGIN: z.string().url().default("http://127.0.0.1:3000"),
+  APP_ORIGIN: z.string().url().default("http://localhost:3456"),
   APP_BIND: z.string().default("127.0.0.1"),
   API_HOST: z.string().default("127.0.0.1"),
   API_PORT: z.coerce.number().int().positive().default(4000),
@@ -15,7 +15,7 @@ export const envSchema = z.object({
   KITE_API_KEY: z.string().min(1).optional().or(z.literal("")),
   KITE_API_SECRET: z.string().min(1).optional().or(z.literal("")),
   KITE_ALLOWED_CLIENT_ID: z.string().optional().default(""),
-  KITE_REDIRECT_URL: z.string().url().default("http://127.0.0.1:3000/zerodha/callback"),
+  KITE_REDIRECT_URL: z.string().url().default("http://localhost:3456/zerodha/callback"),
   SESSION_SECRET: z.string().min(16),
   TOKEN_ENCRYPTION_KEY_BASE64: z.string().min(16),
   TOKEN_ENCRYPTION_KEY_VERSION: z.coerce.number().int().positive().default(1),

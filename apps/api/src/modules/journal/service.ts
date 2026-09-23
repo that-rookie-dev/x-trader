@@ -45,7 +45,14 @@ export class JournalService {
   }
 
   async paperLossStreak(_symbol: string): Promise<boolean> {
-    return false;
+    const rows = await this.db
+      .select()
+      .from(tradeJournal)
+      .where(and(eq(tradeJournal.executionMode, "PAPER"), eq(tradeJournal.source, "paper-close")))
+      .orderBy(desc(tradeJournal.createdAt))
+      .limit(5);
+    if (rows.length < 3) return false;
+    return rows.slice(0, 3).every((row) => row.decision === "LOSS");
   }
 
   async remember(input: {

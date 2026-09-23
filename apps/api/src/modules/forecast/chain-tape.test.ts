@@ -2,25 +2,36 @@ import { describe, expect, it } from "vitest";
 import { buyNetFloor, liquidEnough, mapInvalidated, maxPain, notableMarkChange, putCallRatio, sessionClock } from "./chain-tape.js";
 import { eodTradeView } from "./eod.js";
 
-const OPEN = new Date("2026-06-15T04:30:00.000Z");
-const AFTER_CLOSE = new Date("2026-06-15T10:00:00.000Z");
-const EXPIRY_CUT = new Date("2026-06-15T08:05:00.000Z");
+const OPEN = new Date("2026-06-15T04:30:00.000Z"); // 10:00 IST
+const CLOSING = new Date("2026-06-15T09:50:00.000Z"); // 15:20 IST
+const AFTER_CLOSE = new Date("2026-06-15T10:05:00.000Z"); // 15:35 IST
+const EXPIRY_AFTERNOON = new Date("2026-06-15T08:05:00.000Z"); // 13:35 IST
 
 describe("session clock", () => {
-  it("is open at 10:00 IST", () => {
+  it("is open at 10:00 IST until 15:30", () => {
     const clock = sessionClock(OPEN, "2099-01-01");
     expect(clock.cutoff).toBe(false);
+    expect(clock.closingSoon).toBe(false);
     expect(clock.netFloor).toBe(150);
-    expect(clock.label).toBe("UNTIL 15:00");
+    expect(clock.label).toBe("UNTIL 15:30");
   });
 
-  it("cuts new buys after 15:00 IST", () => {
+  it("flags the last 15 minutes before the close bell", () => {
+    const clock = sessionClock(CLOSING, "2099-01-01");
+    expect(clock.cutoff).toBe(false);
+    expect(clock.closingSoon).toBe(true);
+    expect(clock.label).toBe("LAST 15M");
+  });
+
+  it("closes new entries only after 15:30 IST", () => {
     expect(sessionClock(AFTER_CLOSE, "2099-01-01").cutoff).toBe(true);
-    expect(sessionClock(AFTER_CLOSE, "2099-01-01").label).toBe("CUTOFF");
+    expect(sessionClock(AFTER_CLOSE, "2099-01-01").label).toBe("CLOSED");
   });
 
-  it("cuts expiry-day buys after 13:30 IST", () => {
-    expect(sessionClock(EXPIRY_CUT, "2026-06-15").cutoff).toBe(true);
+  it("does not use an early expiry-day cutoff", () => {
+    const clock = sessionClock(EXPIRY_AFTERNOON, "2026-06-15");
+    expect(clock.cutoff).toBe(false);
+    expect(clock.label).toBe("UNTIL 15:30");
   });
 });
 
@@ -52,7 +63,7 @@ describe("gates", () => {
   });
 
   it("raises the net floor after a paper loss streak", () => {
-    expect(buyNetFloor({ cutoff: false, netFloor: 150, label: "UNTIL 15:00", expiryToday: false }, true)).toBe(250);
+    expect(buyNetFloor({ cutoff: false, closingSoon: false, netFloor: 150, label: "UNTIL 15:30", expiryToday: false }, true)).toBe(250);
   });
 
   it("only records notable mark flips", () => {
@@ -77,10 +88,17 @@ describe("eodTradeView gates", () => {
     existing: "NO_BUY" as const,
   };
 
-  it("kills a buy after session cutoff", () => {
+  it("keeps BUY marks through the last 15 minutes", () => {
+    const view = eodTradeView({ ...base, now: CLOSING });
+    expect(view.mark).toBe("BUY");
+    expect(view.why).not.toMatch(/closed|cutoff/i);
+  });
+
+  it("blocks new entries only after the close bell", () => {
     const view = eodTradeView({ ...base, now: AFTER_CLOSE });
-    expect(view.mark).toBe("NO_BUY");
-    expect(view.why).toMatch(/cutoff/i);
+    expect(view.mark).toBe("CLOSED");
+    expect(view.why).toMatch(/closed/i);
+    expect(view.why).toMatch(/would BUY/i);
   });
 
   it("kills a buy when there is no tape", () => {

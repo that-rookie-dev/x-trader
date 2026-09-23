@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# xTrader installer (no Docker). Intended to be attached to GitHub Releases.
+# xTrader installer (no Docker). Attached to GitHub Releases for that-rookie-dev/x-trader.
 PREFIX="${XTRADER_HOME:-$HOME/.xtrader}"
-REPO="${XTRADER_REPO:-xtrader/xtrader}"
+REPO="${XTRADER_REPO:-that-rookie-dev/x-trader}"
 VERSION="${XTRADER_VERSION:-latest}"
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -28,34 +28,37 @@ else
 fi
 
 tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
 if command -v curl >/dev/null; then
-  curl -fsSL "$url" -o "$tmp/xtrader.tgz" || echo "Release asset not published yet; using local workspace copy if present"
+  if ! curl -fsSL "$url" -o "$tmp/xtrader.tgz"; then
+    echo "Release asset not published yet at $url"
+    echo "Build from source or set XTRADER_VERSION to a published tag."
+    exit 1
+  fi
 else
   echo "curl is required"; exit 1
 fi
 
-if [[ -f "$tmp/xtrader.tgz" ]] && gzip -t "$tmp/xtrader.tgz" 2>/dev/null; then
-  tar -xzf "$tmp/xtrader.tgz" -C "$PREFIX"
-fi
+tar -xzf "$tmp/xtrader.tgz" -C "$PREFIX"
 
 mkdir -p "$PREFIX/bin" "$PREFIX/var"
 if [[ ! -f "$PREFIX/.env" ]]; then
   cat > "$PREFIX/.env" <<'EOF'
 NODE_ENV=production
 APP_NAME=xTrader
-APP_ORIGIN=http://127.0.0.1:3000
+APP_ORIGIN=http://localhost:3456
 APP_BIND=127.0.0.1
 API_HOST=127.0.0.1
 API_PORT=4000
-KITE_REDIRECT_URL=http://127.0.0.1:3000/zerodha/callback
-EXECUTION_MODE=PAPER
-LIVE_TRADING_ENABLED=false
-AUTONOMOUS_TRADING_ENABLED=false
+KITE_REDIRECT_URL=http://localhost:3456/zerodha/callback
+MARKET_TIMEZONE=Asia/Kolkata
 EMBEDDED_POSTGRES_PORT=54329
+EMBEDDED_POSTGRES_PASSWORD=xtrader
 EOF
   echo "SESSION_SECRET=$(openssl rand -base64 48)" >> "$PREFIX/.env"
   echo "TOKEN_ENCRYPTION_KEY_BASE64=$(openssl rand -base64 32)" >> "$PREFIX/.env"
-  echo "Created $PREFIX/.env — add KITE_API_KEY and KITE_API_SECRET"
+  echo "Created $PREFIX/.env — enter Kite API key/secret in the first-run UI"
 fi
 
 if [[ "$os" == "linux" ]] && command -v systemctl >/dev/null; then
@@ -90,5 +93,8 @@ EOF
   echo "Load with: launchctl load $plist"
 fi
 
-echo "xTrader files are in $PREFIX"
-echo "UI: http://127.0.0.1:3000"
+echo ""
+echo "xTrader is installed in $PREFIX"
+echo "Open http://localhost:3456"
+echo "On first load, enter your Zerodha Kite API key and secret."
+echo "In the Kite app, set redirect URL to: http://localhost:3456/zerodha/callback"

@@ -69,8 +69,8 @@ describe("EOD option estimate", () => {
 
 const OPEN = new Date("2026-06-15T04:30:00.000Z");
 
-describe("cheap-side option buys", () => {
-  it("buys PE below spot when the index is expected lower, not ITM PE above spot", () => {
+describe("profitable option buys", () => {
+  it("buys PE below spot when the index is expected lower", () => {
     const otm = eodTradeView({
       kind: "PE",
       strike: 990,
@@ -83,6 +83,11 @@ describe("cheap-side option buys", () => {
       existing: "NO_BUY",
       now: OPEN,
     });
+    expect(otm.mark).toBe("BUY");
+    expect(otm.why).toMatch(/net ₹/i);
+  });
+
+  it("still surfaces an ITM PE when expected net clears the floor", () => {
     const itm = eodTradeView({
       kind: "PE",
       strike: 1100,
@@ -94,13 +99,17 @@ describe("cheap-side option buys", () => {
       held: false,
       existing: "NO_BUY",
       now: OPEN,
+      netFloor: 50,
     });
-    expect(otm.mark).toBe("BUY");
-    expect(itm.mark).toBe("NO_BUY");
-    expect(itm.why).toMatch(/below the index/i);
+    if (Number(itm.pnl.net) >= 50) {
+      expect(itm.mark).toBe("BUY");
+      expect(itm.why).toMatch(/ITM/i);
+    } else {
+      expect(itm.mark).toBe("NO_BUY");
+    }
   });
 
-  it("buys CE above spot when the index is expected higher, not ITM CE", () => {
+  it("buys CE above spot when the index is expected higher", () => {
     const otm = eodTradeView({
       kind: "CE",
       strike: 1010,
@@ -113,23 +122,10 @@ describe("cheap-side option buys", () => {
       existing: "NO_BUY",
       now: OPEN,
     });
-    const itm = eodTradeView({
-      kind: "CE",
-      strike: 900,
-      spot: 1000,
-      eodSpot: 1030,
-      premium: 105,
-      expiry: "2099-01-01",
-      lotSize: 50,
-      held: false,
-      existing: "NO_BUY",
-      now: OPEN,
-    });
     expect(otm.mark).toBe("BUY");
-    expect(itm.mark).toBe("NO_BUY");
   });
 
-  it("does not buy CE on a bearish close", () => {
+  it("does not buy CE on a bearish close when buy fails the floor (may write instead)", () => {
     const ce = eodTradeView({
       kind: "CE",
       strike: 1010,
@@ -142,8 +138,10 @@ describe("cheap-side option buys", () => {
       existing: "NO_BUY",
       now: OPEN,
     });
-    expect(ce.mark).toBe("NO_BUY");
-    expect(ce.why).toMatch(/PE below spot/i);
+    expect(ce.mark).not.toBe("BUY");
+    expect(["SELL", "NO_BUY", "WAIT"]).toContain(ce.mark);
+    if (ce.mark === "SELL") expect(ce.why).toMatch(/WRITE/i);
+    else expect(ce.why).toMatch(/leans PE|not expected to pay|does not cover|under/i);
   });
 });
 

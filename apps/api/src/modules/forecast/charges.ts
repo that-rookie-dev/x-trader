@@ -90,3 +90,23 @@ export function optionPnl(input: { entry: number; exit: number; qty: number }): 
     net: money(net, 2),
   };
 }
+
+/** Sell premium now, buy back at EOD (write / short). */
+export function optionPnlShort(input: { entry: number; exit: number; qty: number }): ReturnType<typeof optionPnl> {
+  const qty = Math.max(1, Math.floor(input.qty));
+  const sellNotional = input.entry * qty;
+  const buyNotional = input.exit * qty;
+  const charges = optionRoundTrip({ buyPremium: input.exit, sellPremium: input.entry, qty });
+  const gross = sellNotional - buyNotional;
+  const net = gross - Number(charges.total);
+  return {
+    qty,
+    entry: money(input.entry, 2),
+    exit: money(input.exit, 2),
+    buyNotional: money(buyNotional, 2),
+    sellNotional: money(sellNotional, 2),
+    gross: money(gross, 2),
+    charges,
+    net: money(net, 2),
+  };
+}
