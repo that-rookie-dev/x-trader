@@ -248,56 +248,80 @@
       box-shadow: 0 0 10px var(--green);
       animation: pulse 2s infinite;
     }
-    .brief-main { padding: 22px 0 18px; }
-    .brief-kicker { color: var(--lime); font: 700 9px/1 var(--mono); letter-spacing: .12em; }
-    .brief-main h3 { margin: 9px 0 8px; font-size: 27px; letter-spacing: -.04em; }
-    .brief-main p { margin: 0; color: var(--muted); font-size: 13px; }
-    .brief-bars {
-      padding: 16px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,.015);
-    }
-    .brief-row {
+    .journey-intro { padding: 18px 0 15px; }
+    .journey-kicker { color: var(--lime); font: 700 9px/1 var(--mono); letter-spacing: .12em; }
+    .journey-intro h3 { margin: 8px 0 0; font-size: 25px; line-height: 1.05; letter-spacing: -.04em; }
+    .journey-grid {
       display: grid;
-      grid-template-columns: 72px 1fr 58px;
-      align-items: center;
+      grid-template-columns: repeat(2, 1fr);
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+    .journey-step {
+      position: relative;
+      min-height: 82px;
+      display: grid;
+      grid-template-columns: 26px 1fr;
       gap: 10px;
-      margin: 10px 0;
-      color: var(--muted);
-      font: 9px/1 var(--mono);
+      padding: 13px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.012);
+      transition: background .2s ease, border-color .2s ease;
     }
-    .brief-row b { color: var(--ink); text-align: right; font-weight: 650; }
-    .brief-track { height: 5px; background: #182019; overflow: hidden; }
-    .brief-track i {
-      display: block;
-      height: 100%;
-      background: linear-gradient(90deg, var(--green), var(--lime));
-      transform-origin: left;
-      animation: briefGrow 1.1s ease both;
+    .journey-step:hover { background: rgba(185,255,102,.045); border-color: var(--line-strong); }
+    .journey-step::after {
+      content: "→";
+      position: absolute;
+      right: -7px;
+      top: calc(50% - 7px);
+      z-index: 2;
+      width: 14px;
+      height: 14px;
+      color: var(--lime);
+      background: #0a0f0c;
+      font: 10px/14px var(--mono);
+      text-align: center;
     }
-    .brief-row:nth-child(2) i { background: linear-gradient(90deg, var(--cyan), var(--green)); animation-delay: .12s; }
-    .brief-row:nth-child(3) i { animation-delay: .24s; }
-    .brief-learning {
+    .journey-step:nth-child(2)::after,
+    .journey-step:nth-child(4)::after {
+      content: "↓";
+      right: auto;
+      left: calc(50% - 7px);
+      top: auto;
+      bottom: -7px;
+    }
+    .journey-step:nth-child(3) { grid-column: 2; grid-row: 2; }
+    .journey-step:nth-child(4) { grid-column: 1; grid-row: 2; }
+    .journey-step:nth-child(3)::after {
+      content: "←";
+      right: auto;
+      left: -7px;
+    }
+    .journey-step:last-child::after { display: none; }
+    .journey-step > b {
+      width: 23px;
+      height: 23px;
       display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 14px;
-      align-items: end;
-      margin-top: 11px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      background: rgba(185,255,102,.025);
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      color: var(--lime);
+      font: 800 8px/1 var(--mono);
     }
-    .brief-learning span { display: block; color: var(--muted); font: 9px/1.5 var(--mono); }
-    .brief-learning strong { display: block; margin-top: 5px; font-size: 14px; }
-    .brief-learning b { color: var(--lime); font: 800 22px/1 var(--mono); }
-    .brief-progress {
-      grid-column: 1 / -1;
-      height: 5px;
-      background: #182019;
-      overflow: hidden;
+    .journey-step strong { display: block; margin-bottom: 4px; color: var(--ink); font-size: 12px; line-height: 1.2; }
+    .journey-step span { display: block; color: var(--muted); font-size: 9px; line-height: 1.45; }
+    .journey-step.test {
+      background: linear-gradient(120deg, rgba(115,230,255,.06), rgba(185,255,102,.035));
     }
-    .brief-progress i { display: block; width: 78%; height: 100%; background: var(--lime); }
-    .brief-foot { margin-top: 14px; color: var(--dim); font: 9px/1.5 var(--mono); }
+    .journey-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      color: var(--dim);
+      font: 9px/1.5 var(--mono);
+    }
+    .journey-foot b { color: var(--lime); font-weight: 700; }
 
     .ticker-tape {
       overflow: hidden;
@@ -559,7 +583,6 @@
 
     @keyframes pulse { 50% { opacity: .35; box-shadow: 0 0 3px var(--green); } }
     @keyframes heroIn { from { opacity: 0; transform: translateY(14px); } }
-    @keyframes briefGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
     @keyframes ticker { to { transform: translateX(-50%); } }
     @keyframes breathe { 50% { opacity: .65; } }
 
@@ -568,10 +591,10 @@
       .hero-copy > p { font-size: 15px; line-height: 1.48; }
       .hero-facts { font-size: 9px; }
       .market-brief { padding: 16px; }
-      .brief-main { padding: 15px 0 12px; }
-      .brief-main h3 { font-size: 23px; }
-      .brief-bars, .brief-learning { padding: 12px; }
-      .brief-row { margin: 8px 0; }
+      .journey-intro { padding: 12px 0; }
+      .journey-intro h3 { font-size: 21px; }
+      .journey-step { min-height: 69px; padding: 9px 10px; }
+      .journey-step strong { font-size: 11px; }
     }
 
     @media (max-width: 920px) {
@@ -649,30 +672,45 @@
         </div>
       </div>
 
-      <div class="market-brief reveal" aria-label="A simple preview of the xTrader daily market brief">
+      <div class="market-brief reveal" aria-label="How xTrader supports a complete trading decision">
         <div class="brief-top">
-          <span>TODAY AT A GLANCE</span>
-          <span class="brief-live">WATCHING</span>
+          <span>FROM LIVE DATA TO LESSONS</span>
+          <span class="brief-live">YOUR LOOP</span>
         </div>
-        <div class="brief-main">
-          <div class="brief-kicker">YOUR CHOSEN SYMBOLS</div>
-          <h3>9 names are being followed.</h3>
-          <p>Quotes, market signals, and forecasts refresh quietly while xTrader is running.</p>
+        <div class="journey-intro">
+          <div class="journey-kicker">YOUR TRADING DAY, UPGRADED</div>
+          <h3>From “what now?” to “now I know.”</h3>
         </div>
-        <div class="brief-bars">
-          <div class="brief-row"><span>Trend</span><div class="brief-track"><i style="width:72%"></i></div><b>STEADY</b></div>
-          <div class="brief-row"><span>Activity</span><div class="brief-track"><i style="width:61%"></i></div><b>ACTIVE</b></div>
-          <div class="brief-row"><span>Clarity</span><div class="brief-track"><i style="width:84%"></i></div><b>GOOD</b></div>
-        </div>
-        <div class="brief-learning">
-          <div>
-            <span>LEARNING FROM THE LAST CLOSE</span>
-            <strong>7 of 9 outcomes reviewed</strong>
+        <div class="journey-grid">
+          <div class="journey-step">
+            <b>01</b>
+            <div><strong>Plug into the market</strong><span>Connect Zerodha and bring your watchlist to life.</span></div>
           </div>
-          <b>78%</b>
-          <div class="brief-progress"><i></i></div>
+          <div class="journey-step">
+            <b>02</b>
+            <div><strong>Stay with every move</strong><span>Live data follows the symbols you care about.</span></div>
+          </div>
+          <div class="journey-step">
+            <b>03</b>
+            <div><strong>Cut through the noise</strong><span>See the signal, key levels, direction, and why.</span></div>
+          </div>
+          <div class="journey-step">
+            <b>04</b>
+            <div><strong>Make the call</strong><span>You decide if and when to place the trade.</span></div>
+          </div>
+          <div class="journey-step test">
+            <b>05</b>
+            <div><strong>Doubt it? Prove it first.</strong><span>Paper-test the idea without risking real money.</span></div>
+          </div>
+          <div class="journey-step">
+            <b>06</b>
+            <div><strong>Turn results into an edge</strong><span>Review P&amp;L, learn what worked, and improve.</span></div>
+          </div>
         </div>
-        <div class="brief-foot">ONE WATCHLIST · TWO FORECAST VIEWS · EVERY DECISION STAYS YOURS</div>
+        <div class="journey-foot">
+          <span>REAL DATA · PAPER PRACTICE · CLEAR REVIEW</span>
+          <b>YOU STAY IN CONTROL</b>
+        </div>
       </div>
     </div>
 
