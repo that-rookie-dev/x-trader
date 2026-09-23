@@ -7,6 +7,8 @@ set -euo pipefail
 #   ~/.xtrader/uninstall.sh
 
 PREFIX="${XTRADER_HOME:-$HOME/.xtrader}"
+CLI_LAUNCHER="$HOME/.local/bin/xtrader"
+CLI_PATH_LINE='export PATH="$HOME/.local/bin:$PATH" # xTrader CLI'
 
 FANCY=0
 if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-}" != "dumb" ]]; then
@@ -89,7 +91,8 @@ echo
 
 if [[ ! -d "$PREFIX" ]] \
   && [[ ! -f "$HOME/Library/LaunchAgents/com.xtrader.app.plist" ]] \
-  && [[ ! -f "$HOME/.config/systemd/user/xtrader.service" ]]; then
+  && [[ ! -f "$HOME/.config/systemd/user/xtrader.service" ]] \
+  && [[ ! -f "$CLI_LAUNCHER" ]]; then
   printf '%s\n' "${C_GOLD}Nothing to uninstall — floor is already clear.${C_RESET}"
   exit 0
 fi
@@ -143,6 +146,23 @@ fi
 
 echo "${C_MUTED}Wiping ${PREFIX}…${C_RESET}"
 rm -rf "$PREFIX"
+
+# Remove only the launcher installed by xTrader.
+if [[ -f "$CLI_LAUNCHER" ]] \
+  && grep -Fq "# xTrader CLI launcher" "$CLI_LAUNCHER" 2>/dev/null; then
+  rm -f "$CLI_LAUNCHER"
+fi
+
+# Remove the managed PATH entry while preserving the rest of each profile.
+for profile in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile"; do
+  [[ -f "$profile" ]] || continue
+  if grep -Fqx "$CLI_PATH_LINE" "$profile" 2>/dev/null; then
+    profile_tmp="${profile}.xtrader-tmp"
+    awk -v line="$CLI_PATH_LINE" '$0 != line' "$profile" >"$profile_tmp"
+    cat "$profile_tmp" >"$profile"
+    rm -f "$profile_tmp"
+  fi
+done
 
 # stray logs from older layouts
 rm -f /tmp/xtrader*.log 2>/dev/null || true

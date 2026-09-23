@@ -19,11 +19,12 @@ In the [Kite Connect developer portal](https://developers.kite.trade/) app, set 
 Full notes, upgrades, and session recovery: [docs/install.md](docs/install.md).
 
 ```bash
-# optional overrides
-# XTRADER_HOME=~/.xtrader XTRADER_VERSION=v0.1.0 bash install.sh
-~/.xtrader/bin/xtrader start          # API + UI + bundled Postgres
-~/.xtrader/bin/xtrader update         # apply latest GitHub release and restart
-~/.xtrader/bin/xtrader session reset  # wipe app cookies / expire broker sessions
+# Available in every new terminal after installation
+xtrader start          # start in the background
+xtrader stop           # stop the app
+xtrader update         # apply latest GitHub release and restart
+xtrader status         # check whether the app is running
+xtrader session reset  # wipe app cookies / expire broker sessions
 ```
 
 The UI also shows an update banner when a newer release is published.

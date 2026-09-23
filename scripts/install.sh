@@ -347,6 +347,44 @@ EOF
   chmod +x "$PREFIX/bin/xtrader"
 }
 
+install_cli_command() {
+  local cli_dir="$HOME/.local/bin"
+  local cli_path="$cli_dir/xtrader"
+  local profile
+  local path_line='export PATH="$HOME/.local/bin:$PATH" # xTrader CLI'
+
+  [[ -f "$PREFIX/bin/xtraderctl" ]] \
+    || die "CLI controller is missing from the release bundle."
+  chmod +x "$PREFIX/bin/xtraderctl"
+
+  mkdir -p "$cli_dir"
+  cat >"$cli_path" <<EOF
+#!/usr/bin/env bash
+# xTrader CLI launcher
+exec "$PREFIX/bin/xtraderctl" "\$@"
+EOF
+  chmod +x "$cli_path"
+
+  case "${SHELL:-}" in
+    */zsh) profile="$HOME/.zshrc" ;;
+    */bash)
+      if [[ "$(uname -s)" == "Darwin" ]]; then
+        profile="$HOME/.bash_profile"
+      else
+        profile="$HOME/.bashrc"
+      fi
+      ;;
+    *) profile="$HOME/.profile" ;;
+  esac
+
+  touch "$profile"
+  if ! grep -Fqx "$path_line" "$profile" 2>/dev/null; then
+    printf '\n%s\n' "$path_line" >>"$profile"
+  fi
+  CLI_PROFILE="$profile"
+  export PATH="$cli_dir:$PATH"
+}
+
 stop_existing_ports() {
   local port pids found=0
   for port in 3456 4000 54329; do
@@ -465,6 +503,7 @@ ensure_node
 finish_step "Node ready ($("$NODE_BIN" -v), via $NODE_SOURCE)"
 
 write_launcher
+install_cli_command
 
 start_spin "Writing config"
 if [[ ! -f "$PREFIX/.env" ]]; then
@@ -609,7 +648,8 @@ echo
 echo "Done."
 echo "  Open     http://localhost:3456"
 echo "  Home     $PREFIX"
-echo "  CLI      $PREFIX/bin/xtrader start | update | session reset"
+echo "  CLI      xtrader start | stop | update"
+echo "  PATH     Added ~/.local/bin in $CLI_PROFILE (open a new terminal)"
 echo "  Remove   $PREFIX/uninstall.sh"
 echo
 echo "  First run: paste Kite API key + secret in the UI."

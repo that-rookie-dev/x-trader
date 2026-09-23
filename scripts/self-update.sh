@@ -67,8 +67,45 @@ if [[ -f "$tmp/dotenv.bak" ]]; then
 fi
 
 chmod +x "$PREFIX/bin/xtrader" 2>/dev/null || true
+chmod +x "$PREFIX/bin/xtraderctl" 2>/dev/null || true
 chmod +x "$PREFIX/scripts/"*.sh 2>/dev/null || true
 chmod +x "$PREFIX/install.sh" 2>/dev/null || true
+
+# Keep the short `xtrader` command available after upgrades as well as fresh installs.
+if [[ -x "$PREFIX/bin/xtraderctl" ]]; then
+  cli_dir="$HOME/.local/bin"
+  cli_path="$cli_dir/xtrader"
+  mkdir -p "$cli_dir"
+  cat >"$cli_path" <<EOF
+#!/usr/bin/env bash
+# xTrader CLI launcher
+exec "$PREFIX/bin/xtraderctl" "\$@"
+EOF
+  chmod +x "$cli_path"
+
+  path_line='export PATH="$HOME/.local/bin:$PATH" # xTrader CLI'
+  case "${SHELL:-}" in
+    */zsh) profile="$HOME/.zshrc" ;;
+    */bash)
+      if [[ "$os" == "darwin" ]]; then
+        profile="$HOME/.bash_profile"
+      else
+        profile="$HOME/.bashrc"
+      fi
+      ;;
+    *)
+      if [[ "$os" == "darwin" ]]; then
+        profile="$HOME/.zshrc"
+      else
+        profile="$HOME/.profile"
+      fi
+      ;;
+  esac
+  touch "$profile"
+  if ! grep -Fqx "$path_line" "$profile" 2>/dev/null; then
+    printf '\n%s\n' "$path_line" >>"$profile"
+  fi
+fi
 
 # Ensure VERSION file matches requested tag when tarball omitted it
 if [[ "$VERSION" != "latest" ]]; then

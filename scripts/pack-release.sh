@@ -39,6 +39,7 @@ cp scripts/uninstall.sh "$OUT/uninstall.sh"
 
 mkdir -p "$OUT/scripts"
 cp scripts/self-update.sh scripts/install.sh scripts/uninstall.sh scripts/prepare-web-standalone.sh "$OUT/scripts/"
+cp scripts/xtraderctl.sh "$OUT/bin/xtraderctl"
 chmod +x "$OUT/scripts/"*.sh "$OUT/uninstall.sh"
 
 # Semver stamped into the install. Manual rebuilds provide the release tag
@@ -80,7 +81,7 @@ if [[ -z "$NODE_BIN" || ! -x "$NODE_BIN" ]]; then
 fi
 exec "$NODE_BIN" "$ROOT/apps/api/dist/cli.js" "$@"
 EOF
-chmod +x "$OUT/bin/xtrader" "$OUT/install.sh" "$OUT/uninstall.sh" "$OUT/scripts/self-update.sh" "$OUT/scripts/uninstall.sh"
+chmod +x "$OUT/bin/xtrader" "$OUT/bin/xtraderctl" "$OUT/install.sh" "$OUT/uninstall.sh" "$OUT/scripts/self-update.sh" "$OUT/scripts/uninstall.sh"
 
 TARBALL="xtrader-${PLATFORM}.tar.gz"
 tar -czf "$TARBALL" -C "$OUT" .
