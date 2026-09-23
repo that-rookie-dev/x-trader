@@ -75,7 +75,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The `release` workflow builds four platform tarballs (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`) plus `install.sh` and attaches them to the GitHub Release.
+The `release` workflow builds four platform tarballs (`linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64` on `macos-15-intel`) plus `install.sh` and attaches them to the GitHub Release.
 
 Local dry-run after `npm run build`:
 
