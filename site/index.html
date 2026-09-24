@@ -379,12 +379,25 @@
       grid-template-columns: 1.05fr .95fr;
       gap: 36px;
       align-items: center;
-      margin-bottom: 14px;
+      width: min(100%, 860px);
+      margin: 0 0 0 0;
       padding: 36px;
       border: 1px solid var(--line);
-      background: rgba(10, 14, 12, .55);
+      background: rgba(10, 14, 12, .72);
       scroll-margin-top: 88px;
     }
+    .desk-panel:nth-of-type(odd) { margin-right: auto; }
+    .desk-panel:nth-of-type(even) {
+      margin-left: auto;
+      margin-top: -36px;
+      grid-template-columns: .95fr 1.05fr;
+    }
+    .desk-panel:nth-of-type(even) .desk-copy { order: 2; }
+    .desk-panel:nth-of-type(odd):not(:nth-of-type(1)) { margin-top: -36px; }
+    #desk-horizon { width: min(100%, 980px); z-index: 2; }
+    #desk-delta { z-index: 3; }
+    #desk-off { width: min(100%, 760px); margin-left: 8%; z-index: 2; }
+    #desk-timeline { z-index: 4; }
     .desk-panel.band { grid-template-columns: 1fr; }
     .desk-kicker {
       display: flex;
@@ -671,6 +684,11 @@
       .hero { grid-template-columns: 1fr; min-height: calc(100svh - 70px); gap: 0; padding: 45px 0; }
       .market-brief { display: none; }
       .section-head, .learning-wrap, .install-grid, .faq, .desk-panel, .off-grid, .story { grid-template-columns: 1fr; }
+      .desk-panel, .desk-panel:nth-of-type(even), #desk-horizon, #desk-off {
+        width: 100%;
+        margin: 0 0 14px;
+      }
+      .desk-panel:nth-of-type(even) .desk-copy { order: 0; }
       .shot { width: 100%; }
       .off-grid div { border-right: 0; border-bottom: 1px solid var(--line); }
       .off-grid div:last-child { border-bottom: 0; }
