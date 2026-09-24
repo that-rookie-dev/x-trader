@@ -1,6 +1,6 @@
 {
   "name": "xtrader",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "xTrader — personal AI-assisted trading system",
   "workspaces": [

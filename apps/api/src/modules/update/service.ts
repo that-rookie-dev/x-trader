@@ -17,6 +17,7 @@ export type UpdateStatus = {
   checkedAt: string | null;
   message: string | null;
   applying: boolean;
+  progress: { state: string; message: string; percent: number } | null;
 };
 
 type GhRelease = {
@@ -109,17 +110,24 @@ export class UpdateService {
       message = `v${latest} available — reinstall from the GitHub release (source checkout)`;
     }
 
+    const progress = this.readProgress(current);
+    const applying = this.applying || progress?.active === true;
+    if (progress?.state === "failed" && progress.message) message = progress.message;
+
     return {
       current,
       latest,
       latestTag,
-      updateAvailable,
+      updateAvailable: updateAvailable || applying,
       canUpdate,
       installRoot: root,
       channel,
       checkedAt,
       message,
-      applying: this.applying,
+      applying,
+      progress: progress
+        ? { state: progress.state, message: progress.message, percent: progress.percent }
+        : null,
     };
   }
 
@@ -159,6 +167,13 @@ export class UpdateService {
     );
 
     this.applying = true;
+    this.writeProgress({
+      state: "starting",
+      target: normalizeTag(targetTag),
+      message: "Starting update",
+      percent: 0,
+      startedAt: new Date().toISOString(),
+    });
     this.log.info({ root, targetTag, script }, "starting self-update");
 
     const launcher = spawn(
@@ -186,12 +201,49 @@ export class UpdateService {
     );
     launcher.unref();
 
-    setTimeout(() => {
-      this.log.info("exiting for self-update restart");
-      process.kill(process.pid, "SIGTERM");
-    }, 800);
-
     return { ok: true, version: normalizeTag(targetTag), restarting: true };
+  }
+
+  private progressFile(): string | null {
+    const root = this.installRoot();
+    const dir = this.env.DATA_DIR ?? (root ? resolve(root, "var") : null);
+    return dir ? resolve(dir, "update-status.json") : null;
+  }
+
+  private writeProgress(row: { state: string; target: string; message: string; percent: number; startedAt: string }) {
+    const file = this.progressFile();
+    if (!file) return;
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, `${JSON.stringify(row)}\n`);
+  }
+
+  private readProgress(current: string): { state: string; message: string; percent: number; active: boolean } | null {
+    const file = this.progressFile();
+    if (!file || !existsSync(file)) return null;
+    try {
+      const row = JSON.parse(readFileSync(file, "utf8")) as {
+        state?: string;
+        target?: string;
+        message?: string;
+        percent?: number;
+        startedAt?: string;
+      };
+      const state = row.state ?? "starting";
+      const target = normalizeTag(row.target ?? "");
+      const started = row.startedAt ? Date.parse(row.startedAt) : 0;
+      const fresh = started > 0 && Date.now() - started < 45 * 60 * 1000;
+      if (target && !isNewer(target, current)) return null;
+      if (!fresh && state !== "failed") return null;
+      const active = fresh && state !== "failed";
+      return {
+        state,
+        message: row.message ?? "Updating",
+        percent: Number.isFinite(row.percent) ? Number(row.percent) : 0,
+        active,
+      };
+    } catch {
+      return null;
+    }
   }
 
   private looksLikeBundle(root: string): boolean {

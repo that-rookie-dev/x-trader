@@ -286,6 +286,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <div className="main">
+        <UpdateBanner />
         <header className="top">
           <div className="top-brand">
             <strong>xTrader</strong>
@@ -378,7 +379,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
           )}
         </header>
         <div className="content">
-          <UpdateBanner />
           {children}
         </div>
       </div>

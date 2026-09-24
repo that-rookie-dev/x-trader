@@ -27,12 +27,30 @@ case "$os" in
   *) echo "unsupported platform $os/$arch"; exit 1 ;;
 esac
 
-if [[ "$RESTART" -eq 1 ]]; then
-  # Wait for the old API process to exit after SIGTERM.
-  sleep 3
-fi
+mkdir -p "$PREFIX/var"
+STATUS_FILE="$PREFIX/var/update-status.json"
+STARTED="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+TARGET_VER="${VERSION#v}"
+
+write_status() {
+  local state="$1" message="$2" percent="$3"
+  local tmpf
+  tmpf="$(mktemp "$PREFIX/var/update-status.XXXXXX")"
+  printf '{"state":"%s","target":"%s","message":"%s","percent":%s,"startedAt":"%s"}\n' \
+    "$state" "$TARGET_VER" "$message" "$percent" "$STARTED" >"$tmpf"
+  mv "$tmpf" "$STATUS_FILE"
+}
+
+fail_status() {
+  local code="${1:-$?}"
+  if [[ "$code" -ne 0 ]]; then
+    write_status "failed" "Update failed. See var/update.log" "0"
+  fi
+}
+trap 'fail_status $?' EXIT
 
 echo "[self-update] prefix=$PREFIX platform=$platform version=$VERSION"
+write_status "downloading" "Starting download" "0"
 
 if [[ "$VERSION" == "latest" ]]; then
   url="https://github.com/${REPO}/releases/latest/download/xtrader-${platform}.tar.gz"
@@ -44,14 +62,39 @@ else
 fi
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+trap 'code=$?; rm -rf "$tmp"; fail_status "$code"' EXIT
 
 if ! command -v curl >/dev/null; then
   echo "curl is required"; exit 1
 fi
-if ! curl -fsSL "$url" -o "$tmp/xtrader.tgz"; then
-  echo "Failed to download $url"; exit 1
+
+bytes_of() {
+  if stat -f%z "$1" >/dev/null 2>&1; then
+    stat -f%z "$1"
+  else
+    stat -c%s "$1" 2>/dev/null || echo 0
+  fi
+}
+
+total="$(curl -fsSL -I -L "$url" | awk 'tolower($1)=="content-length:" {n=$2} END {gsub("\r","",n); print n+0}')"
+curl -fL "$url" -o "$tmp/xtrader.tgz" &
+curl_pid=$!
+while kill -0 "$curl_pid" 2>/dev/null; do
+  got="$(bytes_of "$tmp/xtrader.tgz" 2>/dev/null || echo 0)"
+  if [[ "${total:-0}" -gt 0 && "${got:-0}" -ge 0 ]]; then
+    pct=$(( got * 100 / total ))
+    if [[ "$pct" -gt 99 ]]; then pct=99; fi
+  else
+    pct=0
+  fi
+  write_status "downloading" "Downloading release" "$pct"
+  sleep 1
+done
+if ! wait "$curl_pid"; then
+  echo "Failed to download $url"
+  exit 1
 fi
+write_status "extracting" "Replacing app files" "100"
 
 mkdir -p "$PREFIX/var"
 if [[ -f "$PREFIX/.env" ]]; then
@@ -113,6 +156,7 @@ if [[ "$VERSION" != "latest" ]]; then
 fi
 
 echo "[self-update] files replaced"
+write_status "restarting" "Restarting" "100"
 
 restarted=0
 if [[ "$os" == "linux" ]] && command -v systemctl >/dev/null; then
@@ -135,3 +179,6 @@ if [[ "$restarted" -eq 0 ]]; then
 fi
 
 echo "[self-update] done"
+write_status "done" "Updated" "100"
+trap - EXIT
+rm -rf "$tmp"
