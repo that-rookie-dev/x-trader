@@ -1004,17 +1004,22 @@ export function registerRoutes(app: Express, s: AppServices): void {
     "/api/news/feed",
     s.sessions.middleware("optional"),
     asyncHandler(async (req, res) => {
+      const active = await s.ai.modelReady();
+      if (!active) {
+        res.json({ active: false, symbols: [], symbol: null, exchange: null, delta: null, entries: [] });
+        return;
+      }
       const watch = await s.market.listWatchlist();
       const names = watch.map((item) => ({ exchange: item.exchange, symbol: item.symbol }));
       const asked = String(req.query.symbol ?? "");
       const picked = names.find((item) => item.symbol.toUpperCase() === asked.toUpperCase()) ?? names[0] ?? null;
       if (!picked) {
-        res.json({ symbols: [], symbol: null, exchange: null, delta: null, entries: [] });
+        res.json({ active: true, symbols: [], symbol: null, exchange: null, delta: null, entries: [] });
         return;
       }
       const delta = await s.research.read(picked.exchange, picked.symbol);
       const entries = await s.research.tape(picked.exchange, picked.symbol);
-      res.json({ symbols: names, symbol: picked.symbol, exchange: picked.exchange, delta, entries });
+      res.json({ active: true, symbols: names, symbol: picked.symbol, exchange: picked.exchange, delta, entries });
     }),
   );
 

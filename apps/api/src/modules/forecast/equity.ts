@@ -89,8 +89,8 @@ export function scoreEquity(input: {
     rs != null ? Math.max(-1, Math.min(1, rs * 4)) : 0,
     above200 ? 0.8 : above50 ? 0.35 : -0.4,
     donchianBreak ? 0.35 : 0,
-    news < -0.4 ? -0.8 : news * 0.4,
   ];
+  if (news !== 0) factors.push(news < -0.4 ? -0.8 : news * 0.4);
   let score = factors.reduce((a, b) => a + b, 0) / factors.length;
   if (regime === "STRONG_BEARISH" || regime === "BEARISH") score -= 0.12;
   if (regime === "STRONG_BULLISH") score += 0.08;

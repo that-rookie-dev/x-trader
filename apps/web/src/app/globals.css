@@ -1190,6 +1190,7 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 .stage-tab + .stage-tab { border-left: 1px solid var(--line); }
 .horizon-tabs { margin-left: 8px; }
 .news-page { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 8px; }
+.news-off { margin: 24px 0 0; color: var(--muted); font-size: 14px; }
 .news-bar { display: flex; align-items: flex-end; gap: 16px; }
 .news-bar h1 { margin: 0; font-size: 18px; letter-spacing: 0.04em; }
 .news-pick { display: flex; flex-direction: column; gap: 4px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }

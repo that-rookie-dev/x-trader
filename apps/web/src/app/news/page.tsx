@@ -8,6 +8,7 @@ type Name = { exchange: string; symbol: string };
 type Headline = { title: string; url: string; snippet: string };
 type Entry = { at: string; score: number; points: number; summary: string; headlines: Headline[] };
 type Feed = {
+  active?: boolean;
   symbols: Name[];
   symbol: string | null;
   exchange: string | null;
@@ -56,6 +57,16 @@ export default function NewsPage() {
 
   const delta = feed?.delta;
   const points = delta?.points ?? 0;
+
+  if (!feed) return <div className="news-page" />;
+
+  if (feed.active === false) {
+    return (
+      <div className="news-page">
+        <p className="news-off">Not active. Connect an active LLM model to enable this delta.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="news-page">

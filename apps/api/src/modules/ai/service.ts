@@ -403,15 +403,21 @@ export class AiService {
     }
   }
 
+  /** True only when an active profile has a model selected. News stays paused otherwise. */
+  async modelReady(): Promise<boolean> {
+    const row = await this.activeRow();
+    return Boolean(row?.modelId);
+  }
+
   /** News and scraped pages are scored only by the active model. */
   async analyzeNews(input: {
     symbol: string;
     headlines: Array<{ title: string; snippet?: string }>;
     pages: Array<{ title?: string; text: string }>;
-  }): Promise<{ newsScore: number; summary: string }> {
+  }): Promise<{ ok: true; newsScore: number; summary: string } | { ok: false; summary: string }> {
     const active = await this.activeRow();
     if (!active?.modelId) {
-      return { newsScore: 0, summary: "No active AI model. News is not scored." };
+      return { ok: false, summary: "No active AI model. News is not scored." };
     }
     const started = Date.now();
     try {
@@ -440,7 +446,7 @@ You never place orders.`,
         provider: active.kind,
         model: active.modelId,
       });
-      return { newsScore: object.newsScore, summary: object.summary };
+      return { ok: true, newsScore: object.newsScore, summary: object.summary };
     } catch (error) {
       const summary = error instanceof Error ? error.message : "AI news analysis failed.";
       await this.db.insert(agentDecisions).values({
@@ -451,7 +457,7 @@ You never place orders.`,
         provider: active.kind,
         model: active.modelId,
       });
-      return { newsScore: 0, summary };
+      return { ok: false, summary };
     }
   }
 

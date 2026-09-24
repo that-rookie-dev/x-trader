@@ -47,6 +47,7 @@ export class ResearchService {
    */
   async runBackground(items: WatchItem[]): Promise<number> {
     if (this.running || items.length === 0) return 0;
+    if (!(await this.ai.modelReady())) return 0;
     const slotStart = Math.floor(Date.now() / NEWS_SLOT_MS) * NEWS_SLOT_MS;
     const due = await this.dueItems(items, slotStart);
     if (due.length === 0) return 0;
@@ -58,11 +59,13 @@ export class ResearchService {
         const sources = await this.gather(item.symbol, slotStart);
         gathered.push({ ...item, ...sources });
       });
+      let saved = 0;
       for (const item of gathered) {
         const analysed =
           item.headlines.length === 0 && item.pages.length === 0
-            ? { newsScore: 0, summary: "No headlines this slot." }
+            ? { ok: true as const, newsScore: 0, summary: "No headlines this slot." }
             : await this.ai.analyzeNews({ symbol: item.symbol, headlines: item.headlines, pages: item.pages });
+        if (!analysed.ok) break;
         const points = newsPointsFromScore(analysed.newsScore, item.last);
         await this.writeDelta(item, analysed.newsScore, points, analysed.summary);
         await this.saveTape({
@@ -74,8 +77,9 @@ export class ResearchService {
           summary: analysed.summary,
           headlines: item.headlines,
         });
+        saved += 1;
       }
-      return gathered.length;
+      return saved;
     } finally {
       this.running = false;
     }
@@ -118,11 +122,12 @@ export class ResearchService {
     const pack: ResearchPack = {
       query,
       searchedAt: new Date().toISOString(),
-      newsScore: analysed.newsScore,
+      newsScore: analysed.ok ? analysed.newsScore : 0,
       headlines,
       pages: trimmedPages,
       summary: analysed.summary,
     };
+    if (!analysed.ok) return pack;
     await this.writeCache(query, pack);
     return pack;
   }
