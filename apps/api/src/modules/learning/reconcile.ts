@@ -22,6 +22,7 @@ export class PredictionReconciler {
 
   async tick(watch: Array<{ exchange: string; symbol: string }> = []): Promise<void> {
     const now = new Date();
+    await this.resolveDueHorizons(now).catch((err) => this.log.warn({ err }, "horizon resolve failed"));
     if (istMinutes(now) < MARKET_CLOSE_MIN) return;
     const sessionDate = this.ledger.sessionDateIst(now);
     if (!watch.length) return;
@@ -74,6 +75,25 @@ export class PredictionReconciler {
       this.training?.setProgress(done, pending.length);
     }
     this.training?.completeCycle(`Tune cycle complete for ${sessionDate}`);
+  }
+
+  private async resolveDueHorizons(now: Date): Promise<void> {
+    const due = await this.ledger.dueHorizons(now);
+    for (const row of due) {
+      if (!row.horizon || row.horizon === "eod") continue;
+      const quotes = await this.market.quoteMany([{ exchange: row.exchange, symbol: row.symbol }]);
+      const px = Number(quotes[0]?.lastPrice ?? 0);
+      if (!(px > 0)) continue;
+      await this.ledger.resolve({
+        kind: row.kind === "EOD_AI" ? "EOD_AI" : "EOD_ALGO",
+        exchange: row.exchange,
+        symbol: row.symbol,
+        sessionDate: row.sessionDate,
+        horizon: row.horizon,
+        actualClose: px,
+        entrySpot: row.entryPrice != null ? Number(row.entryPrice) : null,
+      });
+    }
   }
 
   async resolveOne(exchange: string, symbol: string, sessionDate: string): Promise<void> {

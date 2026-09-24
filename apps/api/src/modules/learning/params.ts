@@ -127,6 +127,8 @@ export type EodFeatures = {
   gapPct?: number | null;
   /** Sum of desk vote signals */
   voteScore?: number | null;
+  /** Shared news shift in index points, added to both Algo and AI closes. */
+  newsPoints?: number | null;
 };
 
 /** Keys that differ from `base` (absolute values in the delta object). */

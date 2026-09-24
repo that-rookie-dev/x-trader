@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { clientOptionPnl, clientOptionPnlShort } from "@/lib/charges";
 import type { AgentMark, ChainLeg, OptionsBoard, QuoteTick } from "@/lib/desk";
 import { showCompactRupee, showDec, showPct, showRupee, showSignedRupee } from "@/lib/format";
-import { applyLiveQuotes, applyTickCandle, mergeCandles, quotesFromBoard } from "@/lib/live";
+import { applyHorizon, applyLiveQuotes, applyTickCandle, horizonCloseNow, mergeCandles, quotesFromBoard } from "@/lib/live";
 import { readSse } from "@/lib/sse";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -37,6 +37,9 @@ export default function OptionsPage() {
   const [exchange, setExchange] = useState("NSE");
   const [expiry, setExpiry] = useState("");
   const [board, setBoard] = useState<OptionsBoard | null>(null);
+  const [horizonId, setHorizonId] = useState("15m");
+  const view = useMemo(() => (board ? applyHorizon(board, horizonId) : null), [board, horizonId]);
+  const horizon = board?.horizons?.find((row) => row.id === horizonId) ?? null;
   const [candles, setCandles] = useState<Candle[]>([]);
   const [selected, setSelected] = useState<{ symbol: string; kind: "CE" | "PE" | "FUT" } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +134,8 @@ export default function OptionsPage() {
         const data = await api<{ quotes: QuoteTick[] }>(`/api/options/quotes?keys=${encodeURIComponent(keys)}`);
         if (cancelled || !data.quotes.length) return;
         setBoard((prev) => (prev ? applyLiveQuotes(prev, data.quotes) : prev));
+        const spot = data.quotes.find((quote) => quote.exchange === exchange && quote.symbol === symbol);
+        if (spot?.lastPrice) setCandles((prev) => applyTickCandle(prev, Number(spot.lastPrice), Date.now()));
       } catch {
         /* keep last board */
       }
@@ -196,7 +201,7 @@ export default function OptionsPage() {
     };
   }, [symbol, exchange, expiry]);
 
-  const focusLeg = useMemo(() => findLeg(board, selected?.symbol ?? null), [board, selected]);
+  const focusLeg = useMemo(() => findLeg(view, selected?.symbol ?? null), [view, selected]);
 
   async function runStudy() {
     if (!symbol || studying || !board?.aiReady) return;
@@ -269,24 +274,15 @@ export default function OptionsPage() {
     }
   }
 
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const vs = vsView(board?.compare);
   const studyNote = error ?? board?.aiError ?? board?.ai?.why ?? note ?? null;
-  const markKey = [
-    board?.levels?.supports.join(),
-    board?.levels?.resistances.join(),
-    board?.levels?.magnet,
-    board?.eod?.close,
-    board?.eod?.low,
-    board?.eod?.high,
-    board?.ai?.close,
-    board?.ai?.low,
-    board?.ai?.high,
-    board?.desk?.vwap,
-    board?.desk?.orbHigh,
-    board?.desk?.orbLow,
-    board?.session?.invalidation,
-  ].join("|");
-  const marks = useMemo(() => chartLines(board), [markKey]);
+  const marks = useMemo(() => chartLines(board, horizon, clock), [board?.lastPrice, board?.eod?.close, horizon?.id, horizon?.targetAt, clock]);
 
   const deskMeta = board
     ? [
@@ -343,7 +339,7 @@ export default function OptionsPage() {
         onExpiryChange={setExpiry}
         spot={showDec(board?.lastPrice)}
         spotFlash={flashClass(board?.change)}
-        algoClose={showDec(board?.eod?.close)}
+        algoClose={showDec(horizon?.close ?? board?.eod?.close)}
         vs={vs}
         aiClose={
           board?.ai?.close != null
@@ -417,13 +413,31 @@ export default function OptionsPage() {
                   CHART
                 </button>
               </div>
+              {board?.horizons?.length ? (
+                <div className="stage-tabs horizon-tabs">
+                  {board.horizons.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`stage-tab ${horizonId === item.id ? "on" : ""}`}
+                      title={
+                        item.samples
+                          ? `${item.label}: within ${showDec(item.within, 0)} points on ${item.samples} resolves`
+                          : item.abstain
+                            ? "Wait — short and long paths disagree"
+                            : item.label
+                      }
+                      onClick={() => setHorizonId(item.id)}
+                    >
+                      {item.id === "eod" ? "EOD" : item.id}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {stage === "chart" ? (
                 <span className="stage-legend">
-                  <i className="lg-s" /> S
-                  <i className="lg-r" /> R
-                  <i className="lg-algo" /> ALGO
-                  <i className="lg-ai" /> AI
-                  <i className="lg-vwap" /> VWAP
+                  <i className="lg-mkt" /> MKT {showDec(board?.lastPrice)}
+                  <i className="lg-algo" /> {horizon?.label ?? "EOD"} {showDec(marks.find((line) => line.title !== "MKT")?.price)}
                 </span>
               ) : null}
             </div>
@@ -462,7 +476,7 @@ export default function OptionsPage() {
                     </tr>
                     <tr>
                       <th className="num">LTP</th>
-                      <th className="num">EOD</th>
+                      <th className="num">{horizon?.label ?? "EOD"}</th>
                       {showChainErr ? <th className="num">ERR%</th> : null}
                       <th className="num">NET</th>
                       <th />
@@ -470,12 +484,12 @@ export default function OptionsPage() {
                       <th />
                       <th className="num">NET</th>
                       {showChainErr ? <th className="num">ERR%</th> : null}
-                      <th className="num">EOD</th>
+                      <th className="num">{horizon?.label ?? "EOD"}</th>
                       <th className="num">LTP</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(board?.rows ?? []).map((row) => (
+                    {(view?.rows ?? []).map((row) => (
                       <tr
                         key={row.strike}
                         className={`${row.atm ? "atm" : ""} ${board?.aiPick?.strike === row.strike ? "ai-pick" : ""} ${
@@ -891,29 +905,26 @@ function PnlBox({
   );
 }
 
-function chartLines(board: OptionsBoard | null): ChartLine[] {
+function chartLines(
+  board: OptionsBoard | null,
+  horizon: NonNullable<OptionsBoard["horizons"]>[number] | null,
+  now: number,
+): ChartLine[] {
   if (!board) return [];
-  const out: ChartLine[] = [];
-  const add = (raw: string | number | null | undefined, title: string, color: string, dashed = false) => {
-    const price = typeof raw === "number" ? raw : Number(raw);
-    if (!Number.isFinite(price) || price <= 0) return;
-    out.push({ price, title, color, dashed });
-  };
-  board.levels?.supports.forEach((value, i) => add(value, `S${i + 1}`, "#3dd68c"));
-  board.levels?.resistances.forEach((value, i) => add(value, `R${i + 1}`, "#ff5c7a"));
-  add(board.levels?.magnet, "MAG", "#8b96a8");
-  add(board.desk?.vwap, "VWAP", "#f0b429");
-  add(board.desk?.orbHigh, "ORB H", "#8b7cff", true);
-  add(board.desk?.orbLow, "ORB L", "#8b7cff", true);
-  const inv = board.session?.invalidation?.match(/[\d.]+/)?.[0];
-  add(inv, "INV", "#f07178", true);
-  add(board.eod?.low, "ALGO L", "#4c8dff", true);
-  add(board.eod?.high, "ALGO H", "#4c8dff", true);
-  add(board.eod?.close, "ALGO", "#4c8dff");
-  add(board.ai?.low, "AI L", "#2ec8b8", true);
-  add(board.ai?.high, "AI H", "#2ec8b8", true);
-  add(board.ai?.close, "AI", "#2ec8b8");
-  return out;
+  const last = Number(board.lastPrice);
+  const lines: ChartLine[] = [];
+  if (Number.isFinite(last) && last > 0) lines.push({ price: last, title: "MKT", color: "#e7edf5" });
+  const eodClose = Number(board.eod?.close);
+  const anchor = Number(horizon?.anchor);
+  const predicted = horizon && Number.isFinite(anchor)
+    ? Number(horizon.close) + (last - anchor)
+    : horizon?.targetAt && Number.isFinite(eodClose)
+      ? horizonCloseNow({ last, eodClose, targetAt: horizon.targetAt, now })
+      : eodClose;
+  if (Number.isFinite(predicted) && predicted > 0) {
+    lines.push({ price: predicted, title: horizon?.label ?? "EOD", color: "#4c8dff" });
+  }
+  return lines;
 }
 
 function vsView(compare?: OptionsBoard["compare"]): {

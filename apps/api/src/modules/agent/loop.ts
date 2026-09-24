@@ -17,6 +17,7 @@ import type { ForecastParamsStore } from "../learning/params-store.js";
 import type { PredictionLedger } from "../learning/ledger.js";
 
 import type { TrainingDesk } from "../learning/training-desk.js";
+import type { ResearchService } from "../research/service.js";
 import { MARKET_CLOSE_MIN, MARKET_OPEN_MIN, istMinutes } from "../forecast/chain-tape.js";
 
 const SCAN_BATCH = 4;
@@ -46,6 +47,7 @@ export class AgentLoop {
     private readonly ledger?: PredictionLedger,
     private readonly forecastParams?: ForecastParamsStore,
     private readonly training?: TrainingDesk,
+    private readonly research?: ResearchService,
   ) {}
 
   async tick(): Promise<void> {
@@ -134,6 +136,7 @@ export class AgentLoop {
       plays: this.plays,
       ledger: this.ledger,
       forecastParams: this.forecastParams,
+      research: this.research,
     };
     for (let i = 0; i < batch; i += 1) {
       const desk = pool[this.scanDone];
@@ -190,6 +193,7 @@ export class AgentLoop {
         journal: this.journal,
         read: this.read,
         plays: this.plays,
+        research: this.research,
       });
       await this.autopilot.onStocksDesk(desk);
     } catch (err) {

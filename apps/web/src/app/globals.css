@@ -1117,6 +1117,7 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   .sb-ticker { grid-column: 1 / -1; }
 }
 .lg-s { background: var(--up); }
+.lg-mkt { background: #e7edf5; }
 .lg-r { background: var(--down); }
 .lg-algo { background: var(--accent); }
 .lg-ai { background: var(--cash); }
@@ -1187,6 +1188,37 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   border-radius: 0;
 }
 .stage-tab + .stage-tab { border-left: 1px solid var(--line); }
+.horizon-tabs { margin-left: 8px; }
+.news-page { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 8px; }
+.news-bar { display: flex; align-items: flex-end; gap: 16px; }
+.news-bar h1 { margin: 0; font-size: 18px; letter-spacing: 0.04em; }
+.news-pick { display: flex; flex-direction: column; gap: 4px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.news-pick select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); font-family: var(--mono); font-size: 12px; padding: 6px 8px; min-width: 160px; }
+.news-delta { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; font-family: var(--mono); }
+.news-delta span, .news-delta small { color: var(--muted); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+.news-delta b { font-size: 20px; }
+.news-error { color: var(--down); margin: 0; }
+.news-term {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #0c1016;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px 20px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.news-block { margin: 0 0 16px; }
+.news-line { margin: 0; color: #c5d0dc; }
+.news-line time { color: #7d8b9c; margin-right: 10px; }
+.news-line.llm { color: #d6e4ff; margin-top: 4px; }
+.news-line.llm::before { content: "LLM  "; color: #4c8dff; }
+.news-line.src { color: #8b97a8; margin-top: 2px; }
+.news-line.src::before { content: "SRC  "; color: #5c6b7b; }
+.news-line .up, .news-delta.up b { color: var(--up); }
+.news-line .down, .news-delta.down b { color: var(--down); }
 .stage-tab.on {
   color: var(--ink-inv);
   background: var(--accent);

@@ -182,6 +182,7 @@ export async function buildStocksDesk(s: {
   journal: JournalService;
   read: ZerodhaReadAdapter;
   plays?: PlayStore;
+  research?: { read(exchange: string, symbol: string): Promise<{ score: number } | null> };
 }): Promise<StocksDesk> {
   const watch = await s.market.listWatchlist();
   const nifty = await s.market.listCandles("NSE", "NIFTY 50", 1440, 260);
@@ -206,7 +207,7 @@ export async function buildStocksDesk(s: {
         last,
         daily,
         niftyCloses,
-        newsScore: stored?.bias === "BULLISH" ? 0.1 : stored?.bias === "BEARISH" ? -0.1 : 0,
+        newsScore: s.research ? ((await s.research.read(item.exchange, item.symbol))?.score ?? 0) : 0,
         regime,
         expectancy: memory.get(key) ?? memory.get("CASH:EQ") ?? null,
       }),

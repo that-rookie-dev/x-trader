@@ -304,6 +304,8 @@ export function estimateOptionEod(input: {
   expiry: string | null;
   params?: ForecastParams;
   now?: Date;
+  /** When the forecast is for. Defaults to today's 15:30. Short horizons keep time value. */
+  targetAt?: Date;
   /** Futures price when the chain has one. Carry is already in the future, so the rate used with it is 0. */
   futurePx?: number | null;
 }): { eodPremium: string; moneyness: "ITM" | "ATM" | "OTM" } {
@@ -325,12 +327,14 @@ export function estimateOptionEod(input: {
   const undNow = aligned ? input.futurePx! : input.spot;
   const rate = aligned ? 0 : 0.065;
   const tNow = yearsUntil(input.expiry, now);
-  const eodAt = new Date(`${today}T15:30:00+05:30`);
+  const sessionClose = new Date(`${today}T15:30:00+05:30`);
+  const eodAt = input.targetAt ?? sessionClose;
   const tEod = yearsUntil(input.expiry, eodAt);
   const iv = tNow > 1 / 24 / 365 ? blackScholesIv(premium, undNow, input.strike, tNow, input.kind, rate) : null;
   const modelled = iv != null ? blackScholesPrice(input.eodSpot, input.strike, tEod, iv, input.kind, rate) : flat;
   const priced = Number.isFinite(modelled) ? modelled : flat;
-  const eodPremium = Math.max(priced, expiryToday ? intrinsicEod : 0, 0.05);
+  const settlesAtClose = expiryToday && eodAt.getTime() >= sessionClose.getTime() - 1000;
+  const eodPremium = Math.max(priced, settlesAtClose ? intrinsicEod : 0, 0.05);
   const dist = Math.abs(input.eodSpot - input.strike);
   const atmBand = Math.max(input.eodSpot * 0.002, 1);
   const moneyness: "ITM" | "ATM" | "OTM" = dist <= atmBand ? "ATM" : intrinsicEod > 0 ? "ITM" : "OTM";

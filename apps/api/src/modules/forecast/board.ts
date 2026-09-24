@@ -7,6 +7,7 @@ import type { JournalService } from "../journal/service.js";
 import type { ForecastEngine } from "./engine.js";
 import { friendlyDate, loadHeldKeys, markContract, paperHeldSides, stanceLine, visibleIdeas } from "./desk.js";
 import { compareEod, eodTradeView, nearestStrike, predictEodSpot, viewAiStudy } from "./eod.js";
+import { buildHorizons, horizonTarget } from "./horizons.js";
 import { buyNetFloor, maxPain, putCallRatio, sessionClock, istMinutes, MARKET_CLOSE_MIN } from "./chain-tape.js";
 import type { EodFeatures } from "../learning/params.js";
 import type { SignalStore } from "./signals.js";
@@ -15,6 +16,7 @@ import { holdUntilAt, trailNote } from "./plays.js";
 import { adxAgainstKind, snapshotVol, volWhy } from "./vol.js";
 import { adx, atr } from "../indicators/index.js";
 import type { PredictionLedger } from "../learning/ledger.js";
+import type { ResearchService } from "../research/service.js";
 import type { ForecastParamsStore } from "../learning/params-store.js";
 
 export type BoardDeps = {
@@ -28,6 +30,7 @@ export type BoardDeps = {
   plays: PlayStore;
   ledger?: PredictionLedger;
   forecastParams?: ForecastParamsStore;
+  research?: ResearchService;
 };
 
 export async function buildOptionsBoard(
@@ -124,6 +127,7 @@ export async function buildOptionsBoard(
     gapPct,
     voteScore,
   };
+  const news = s.research ? await s.research.read(exchange, symbol).catch(() => null) : null;
   const orbMid =
     features.orbHigh != null && features.orbLow != null
       ? (features.orbHigh + features.orbLow) / 2
@@ -365,6 +369,8 @@ export async function buildOptionsBoard(
     void s.ledger
       .record({
         kind: "EOD_ALGO",
+        horizon: "eod",
+        targetAt: horizonTarget(new Date(), "eod").at.toISOString(),
         exchange,
         symbol,
         expiry: chain.expiry,
@@ -459,6 +465,73 @@ export async function buildOptionsBoard(
     }
   }
 
+  let veto = false;
+  if (symbol.toUpperCase() === "SENSEX" && liveSpot > 0) {
+    try {
+      const nifty = await s.market.quoteMany([{ exchange: "NSE", symbol: "NIFTY 50" }]);
+      const change = Number(nifty[0]?.change ?? 0);
+      const sensexTape = (features.vwap ?? liveSpot) - liveSpot;
+      veto = change !== 0 && sensexTape !== 0 && Math.sign(change) !== Math.sign(sensexTape);
+    } catch {
+      veto = false;
+    }
+  }
+  const horizons = buildHorizons({
+    last: liveSpot,
+    eodClose: Number(eod.close),
+    eodLow: Number(eod.low),
+    eodHigh: Number(eod.high),
+    vwap: features.vwap,
+    veto,
+  });
+  const newsPoints = news?.points ?? 0;
+  if (newsPoints !== 0) {
+    const shift = (value: string) => money(Number(value) + newsPoints, 2);
+    eod.close = shift(eod.close);
+    eodAiFormula.close = shift(eodAiFormula.close);
+    if (ai) ai.close = shift(ai.close);
+    const newsNote = `news ${newsPoints > 0 ? "+" : ""}${money(newsPoints, 1)}`;
+    eod.note = `${eod.note} · ${newsNote}`;
+    for (const horizon of horizons) {
+      horizon.close = shift(horizon.close);
+      horizon.low = shift(horizon.low);
+      horizon.high = shift(horizon.high);
+    }
+  }
+  if (s.ledger) {
+    try {
+      const cal = await s.ledger.horizonCalibration({ exchange, symbol, sessionDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) });
+      for (const horizon of horizons) {
+        const row = cal[horizon.id];
+        if (!row) continue;
+        horizon.samples = row.samples;
+        horizon.within = row.within;
+      }
+    } catch {
+      /* calibration is display-only */
+    }
+  }
+  if (s.ledger && liveSpot > 0) {
+    const sessionDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    for (const horizon of horizons) {
+      if (horizon.id === "eod") continue;
+      void s.ledger
+        .record({
+          kind: "EOD_ALGO",
+          horizon: horizon.id,
+          targetAt: horizon.targetAt,
+          exchange,
+          symbol,
+          expiry: chain.expiry,
+          sessionDate,
+          predictedClose: Number(horizon.close),
+          predictedDirection: Number(horizon.close) >= liveSpot ? "BULLISH" : "BEARISH",
+          entryPrice: liveSpot,
+        })
+        .catch(() => undefined);
+    }
+  }
+
   return {
     symbol,
     exchange,
@@ -471,6 +544,7 @@ export async function buildOptionsBoard(
     stance: stanceLine(forecast.bias),
     bias: forecast.bias,
     eod,
+    horizons,
     eodAi: eodAiFormula,
     activeClose,
     predictionMode,

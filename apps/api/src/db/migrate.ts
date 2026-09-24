@@ -472,5 +472,31 @@ export async function applySchema(client: SqlClient): Promise<void> {
     UPDATE app_settings SET agent_mode = 'COPILOT' WHERE agent_mode IN ('MANUAL', 'COPILOT');
     UPDATE app_settings SET agent_mode = 'AUTO' WHERE agent_mode IN ('AUTONOMOUS', 'AUTO');
     UPDATE app_settings SET prediction_mode = 'ALGO' WHERE prediction_mode IS NULL OR prediction_mode NOT IN ('ALGO', 'AI');
+    ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS horizon text NOT NULL DEFAULT 'eod';
+    ALTER TABLE prediction_ledger ADD COLUMN IF NOT EXISTS target_at timestamptz;
+    DROP INDEX IF EXISTS prediction_ledger_day_kind;
+    CREATE UNIQUE INDEX IF NOT EXISTS prediction_ledger_day_kind ON prediction_ledger(kind, exchange, symbol, session_date, horizon);
+    CREATE TABLE IF NOT EXISTS news_deltas (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      exchange text NOT NULL,
+      symbol text NOT NULL,
+      score numeric(6,4) NOT NULL DEFAULT 0,
+      points numeric(18,4) NOT NULL DEFAULT 0,
+      summary text NOT NULL DEFAULT '',
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS news_delta_symbol ON news_deltas(exchange, symbol);
+    CREATE TABLE IF NOT EXISTS news_tape (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      exchange text NOT NULL,
+      symbol text NOT NULL,
+      slot_start timestamptz NOT NULL,
+      score numeric(6,4) NOT NULL DEFAULT 0,
+      points numeric(18,4) NOT NULL DEFAULT 0,
+      summary text NOT NULL DEFAULT '',
+      headlines jsonb NOT NULL DEFAULT '[]'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS news_tape_slot ON news_tape(exchange, symbol, slot_start);
   `);
 }

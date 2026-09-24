@@ -3,6 +3,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
 import { generateObject, generateText, streamText, type LanguageModel } from "ai";
+import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { AppError, aiStudyDraftSchema, strategyDecisionSchema, type AiStudyDraft, type StrategyDecision } from "@xtrader/domain";
 import type { Database } from "../../db/client.js";
@@ -399,6 +400,58 @@ export class AiService {
         model: active.modelId,
       });
       return { draft: null, error: message };
+    }
+  }
+
+  /** News and scraped pages are scored only by the active model. */
+  async analyzeNews(input: {
+    symbol: string;
+    headlines: Array<{ title: string; snippet?: string }>;
+    pages: Array<{ title?: string; text: string }>;
+  }): Promise<{ newsScore: number; summary: string }> {
+    const active = await this.activeRow();
+    if (!active?.modelId) {
+      return { newsScore: 0, summary: "No active AI model. News is not scored." };
+    }
+    const started = Date.now();
+    try {
+      const model = await this.model();
+      const { object } = await generateObject({
+        model,
+        schema: z.object({
+          newsScore: z.number().min(-1).max(1),
+          summary: z.string(),
+        }),
+        system: `You judge whether current world and market news can move one Indian cash or index symbol during this session.
+Return newsScore from -1 (clear downside) to 1 (clear upside) and a one-sentence summary naming the item that matters.
+Ignore headlines that do not change this symbol. If nothing in the sources can move it, newsScore is 0.
+You never place orders.`,
+        prompt: JSON.stringify({
+          symbol: input.symbol,
+          headlines: input.headlines.slice(0, 8),
+          pages: input.pages.slice(0, 3).map((page) => ({ title: page.title, text: page.text.slice(0, 900) })),
+        }).slice(0, 12_000),
+      });
+      await this.db.insert(agentDecisions).values({
+        profileId: active.id,
+        inputSnapshot: { kind: "news-analysis", symbol: input.symbol },
+        output: object as unknown as Record<string, unknown>,
+        latencyMs: Date.now() - started,
+        provider: active.kind,
+        model: active.modelId,
+      });
+      return { newsScore: object.newsScore, summary: object.summary };
+    } catch (error) {
+      const summary = error instanceof Error ? error.message : "AI news analysis failed.";
+      await this.db.insert(agentDecisions).values({
+        profileId: active.id,
+        inputSnapshot: { kind: "news-analysis", symbol: input.symbol },
+        output: { reasonCode: "AI_FAILURE", explanation: summary },
+        latencyMs: Date.now() - started,
+        provider: active.kind,
+        model: active.modelId,
+      });
+      return { newsScore: 0, summary };
     }
   }
 

@@ -114,25 +114,18 @@ export class ForecastEngine {
     const fiveCloses = five.map((c) => c.close);
     const liveRsi = rsi(fiveCloses, 14) ?? rsiVal;
     const stored = await this.getStored(exchange, symbol);
-    const research =
-      mode === "live" && stored
-        ? {
-            newsScore: stored.bias === "BULLISH" ? 0.1 : stored.bias === "BEARISH" ? -0.1 : 0,
-            headlines: [] as Array<{ title: string; url: string; snippet: string }>,
-            summary: stored.evidence.news,
-          }
-        : await this.research.study(symbol);
+    const news = await this.research.read(exchange, symbol);
     onTrace?.({
       kind: "phase",
-      label: mode === "live" ? "Reusing last research" : "News & research",
-      detail: research.summary,
+      label: "News delta",
+      detail: news?.summary || "News delta not ready.",
     });
     const model = buildDeskModel({
       last: last || 1,
       daily,
       fifteen,
       five,
-      newsScore: research.newsScore,
+      newsScore: 0,
     });
     const bias = model.bias;
     const confidence = model.confidence;
@@ -173,7 +166,7 @@ export class ForecastEngine {
       sma50: sma50 ?? null,
       sma200,
       rsi: liveRsi,
-      newsScore: research.newsScore,
+      newsScore: news?.score ?? 0,
       ret6m: periodReturn(closes, 126),
       ret12m: periodReturn(closes, 252),
       liveBreak,
@@ -195,7 +188,7 @@ export class ForecastEngine {
         last,
         daily,
         niftyCloses: nifty.map((c) => c.close),
-        newsScore: research.newsScore,
+        newsScore: news?.score ?? 0,
         regime,
       });
       suggestions = [...rawIdeas.filter((idea) => idea.lane === "FNO"), equityToIdea(scored)];
@@ -229,7 +222,7 @@ export class ForecastEngine {
       evidence: {
         technical: model.summary,
         history: `${series.length} bars from Kite (${daily.length} daily, ${fifteen.length} 15m, ${five.length} 5m).`,
-        news: research.summary,
+        news: news?.summary || "News delta not ready.",
         desk: {
           votes: model.signals.map((s) => ({ name: s.name, vote: s.vote, detail: s.detail })),
           vwap: model.vwap != null ? money(model.vwap, 2) : null,
@@ -275,10 +268,7 @@ export class ForecastEngine {
         label: "Session map ready",
         detail: `${bias} · algo close ${algoEod.close} · band ${session.expectedLow}–${session.expectedHigh}`,
       });
-      const pack = research as {
-        headlines?: Array<{ title: string; snippet?: string }>;
-        pages?: Array<{ title?: string; text: string }>;
-      };
+      const pack = await this.research.study(symbol);
       onTrace?.({ kind: "phase", label: "Calling model", detail: "Streaming study request" });
       const result = await this.ai.studyEod(
         {

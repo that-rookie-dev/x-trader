@@ -74,6 +74,7 @@ function estimateOptionEod(input: {
   expiry: string | null;
   now?: Date;
   futurePx?: number | null;
+  targetAt?: Date;
 }) {
   const now = input.now ?? new Date();
   const intrinsicNow = input.kind === "CE" ? Math.max(input.spot - input.strike, 0) : Math.max(input.strike - input.spot, 0);
@@ -89,10 +90,13 @@ function estimateOptionEod(input: {
   const aligned = useFuture && !expiryToday && basis > 0.997 && basis < 1.003;
   const undNow = aligned ? input.futurePx! : input.spot;
   const rate = aligned ? 0 : 0.065;
+  const sessionClose = new Date(`${today}T15:30:00+05:30`);
+  const targetAt = input.targetAt ?? sessionClose;
   const iv = yearsUntil(input.expiry, now) > 1 / 24 / 365 ? bsIv(premium, undNow, input.strike, yearsUntil(input.expiry, now), input.kind, rate) : null;
-  const modelled = iv != null ? bsPrice(input.eodSpot, input.strike, yearsUntil(input.expiry, new Date(`${today}T15:30:00+05:30`)), iv, input.kind, rate) : flat;
+  const modelled = iv != null ? bsPrice(input.eodSpot, input.strike, yearsUntil(input.expiry, targetAt), iv, input.kind, rate) : flat;
   const priced = Number.isFinite(modelled) ? modelled : flat;
-  const eodPremium = Math.max(priced, expiryToday ? intrinsicEod : 0, 0.05);
+  const settlesAtClose = expiryToday && targetAt.getTime() >= sessionClose.getTime() - 1000;
+  const eodPremium = Math.max(priced, settlesAtClose ? intrinsicEod : 0, 0.05);
   const dist = Math.abs(input.eodSpot - input.strike);
   const atmBand = Math.max(input.eodSpot * 0.002, 1);
   const eodMoneyness: "ITM" | "ATM" | "OTM" = dist <= atmBand ? "ATM" : intrinsicEod > 0 ? "ITM" : "OTM";
@@ -332,6 +336,69 @@ function repriceBoard(board: OptionsBoard): OptionsBoard {
   };
   next.buys = rebuildBuys(next, target.close);
   return next;
+}
+
+export function applyHorizon(board: OptionsBoard, id: string): OptionsBoard {
+  const horizon = board.horizons?.find((row) => row.id === id) ?? board.horizons?.find((row) => row.id === "eod");
+  if (!horizon) return board;
+  const eodSpot = Number(horizon.close);
+  const targetAt = new Date(horizon.targetAt);
+  const project = (leg: ChainLeg | null, kind: "CE" | "PE", strike: number): ChainLeg | null => {
+    if (!leg) return null;
+    const premium = leg.lastPrice != null ? Number(leg.lastPrice) : null;
+    const est = estimateOptionEod({
+      kind,
+      strike,
+      spot: Number(board.lastPrice),
+      eodSpot,
+      premium,
+      expiry: board.expiry,
+      targetAt,
+      futurePx: board.future?.lastPrice != null ? Number(board.future.lastPrice) : null,
+    });
+    const entry = premium != null && premium > 0 ? premium : null;
+    const exit = Number(est.eodPremium);
+    const pnl = entry != null ? clientOptionPnl({ entry, exit, qty: leg.lotSize ?? 1 }) : leg.pnl;
+    let mark = leg.mark;
+    let why = leg.why;
+    const delivery = /delivery/i.test(leg.why ?? "");
+    if (delivery) {
+      /* A short horizon must not hide a physical-delivery square-off. */
+    } else if (horizon.abstain && (mark === "BUY" || mark === "SELL")) {
+      mark = "NO_BUY";
+      why = horizon.id === "15m" && board.symbol.toUpperCase() === "SENSEX"
+        ? "15m Sensex and Nifty disagree. Wait."
+        : "5m and 1h point opposite ways. Wait.";
+    } else if (mark === "BUY" && pnl && Number(pnl.net) < 150 * horizon.floorScale) {
+      mark = "NO_BUY";
+      why = `Net is under the ${horizon.label} hurdle.`;
+    }
+    return { ...leg, eodPremium: est.eodPremium, eodMoneyness: est.eodMoneyness, pnl, mark, why };
+  };
+  return {
+    ...board,
+    rows: board.rows.map((row) => ({
+      ...row,
+      ce: project(row.ce, "CE", row.strike),
+      pe: project(row.pe, "PE", row.strike),
+    })),
+  };
+}
+
+/** Live horizon price: walk from the current print toward the EOD close, by seconds left. */
+export function horizonCloseNow(input: {
+  last: number;
+  eodClose: number;
+  targetAt: string;
+  now?: number;
+}): number {
+  const now = input.now ?? Date.now();
+  const ist = new Date(now + 5.5 * 60 * 60 * 1000);
+  const close = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 10, 0, 0);
+  const secondsToClose = Math.max(1, (close - now) / 1000);
+  const secondsToTarget = Math.max(0, (Date.parse(input.targetAt) - now) / 1000);
+  const frac = Math.min(1, secondsToTarget / secondsToClose);
+  return input.last + (input.eodClose - input.last) * frac;
 }
 
 export function quotesFromBoard(board: OptionsBoard): QuoteTick[] {

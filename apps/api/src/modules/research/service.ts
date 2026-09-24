@@ -1,11 +1,21 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
-import { researchSnapshots } from "../../db/schema.js";
+import { newsDeltas, newsTape, researchSnapshots } from "../../db/schema.js";
+import type { AiService } from "../ai/service.js";
 import { duckDuckGoSearch, type SearchResult } from "./duckduckgo.js";
 import { fetchNewsRss } from "./news.js";
 import { scrapePage, type ScrapedPage } from "./scrape.js";
 
-const TTL_MS = 15 * 60 * 1000;
+const NEWS_SLOT_MS = 15 * 60 * 1000;
+
+/** Same shift for Algo and AI: a full score moves the close by 0.15% of spot, capped at 0.4%. */
+export function newsPointsFromScore(score: number, last: number): number {
+  if (!(last > 0) || !Number.isFinite(score)) return 0;
+  const capped = Math.max(-1, Math.min(1, score));
+  const points = capped * last * 0.0015;
+  const limit = last * 0.004;
+  return Math.max(-limit, Math.min(limit, points));
+}
 
 export interface ResearchPack {
   query: string;
@@ -16,18 +26,60 @@ export interface ResearchPack {
   summary: string;
 }
 
-const BULL = /\b(rally|surge|upgrade|profit|beat|buy|bullish|record|growth|outperform)\b/i;
-const BEAR = /\b(fall|crash|downgrade|loss|miss|sell|bearish|probe|fraud|weak|slump)\b/i;
+const GATHER_AT_ONCE = 3;
 
-export function newsScoreFromText(text: string): number {
-  const bull = (text.match(new RegExp(BULL, "gi")) ?? []).length;
-  const bear = (text.match(new RegExp(BEAR, "gi")) ?? []).length;
-  if (bull + bear === 0) return 0;
-  return (bull - bear) / (bull + bear);
-}
+type WatchItem = { exchange: string; symbol: string; last: number };
+type Gathered = WatchItem & { headlines: ResearchPack["headlines"]; pages: ScrapedPage[] };
 
 export class ResearchService {
-  constructor(private readonly db: Database) {}
+  private running = false;
+  private worldSlot = -1;
+  private worldHeadlines: ResearchPack["headlines"] = [];
+
+  constructor(
+    private readonly db: Database,
+    private readonly ai: AiService,
+  ) {}
+
+  /**
+   * One background pass per 15-minute slot. Fetches a few symbols at a time, then asks the model
+   * for one symbol at a time so a long watchlist cannot stampede the provider or stall the desk.
+   */
+  async runBackground(items: WatchItem[]): Promise<number> {
+    if (this.running || items.length === 0) return 0;
+    const slotStart = Math.floor(Date.now() / NEWS_SLOT_MS) * NEWS_SLOT_MS;
+    const due = await this.dueItems(items, slotStart);
+    if (due.length === 0) return 0;
+    this.running = true;
+    try {
+      await this.worldForSlot(slotStart);
+      const gathered: Gathered[] = [];
+      await this.pool(due, GATHER_AT_ONCE, async (item) => {
+        const sources = await this.gather(item.symbol, slotStart);
+        gathered.push({ ...item, ...sources });
+      });
+      for (const item of gathered) {
+        const analysed =
+          item.headlines.length === 0 && item.pages.length === 0
+            ? { newsScore: 0, summary: "No headlines this slot." }
+            : await this.ai.analyzeNews({ symbol: item.symbol, headlines: item.headlines, pages: item.pages });
+        const points = newsPointsFromScore(analysed.newsScore, item.last);
+        await this.writeDelta(item, analysed.newsScore, points, analysed.summary);
+        await this.saveTape({
+          exchange: item.exchange,
+          symbol: item.symbol,
+          slotStart: new Date(slotStart),
+          score: analysed.newsScore,
+          points,
+          summary: analysed.summary,
+          headlines: item.headlines,
+        });
+      }
+      return gathered.length;
+    } finally {
+      this.running = false;
+    }
+  }
 
   async study(symbol: string, extraQuery = ""): Promise<ResearchPack> {
     const query = `${symbol} NSE stock news India ${extraQuery}`.trim();
@@ -61,26 +113,163 @@ export class ResearchService {
       ...news.slice(0, 6),
       ...search.slice(0, 4).map((s) => ({ title: s.title, url: s.url, snippet: s.snippet })),
     ].slice(0, 8);
-    const blob = [...headlines.map((h) => `${h.title} ${h.snippet}`), ...pages.map((p) => p.text)].join(" ");
-    const score = newsScoreFromText(blob);
-    const summary =
-      headlines.length === 0 && pages.length === 0
-        ? "No public news/search hits in this cycle."
-        : headlines
-            .slice(0, 4)
-            .map((h) => h.title)
-            .join(" · ");
-
+    const trimmedPages = pages.map((p) => ({ ...p, text: p.text.slice(0, 1200) }));
+    const analysed = await this.ai.analyzeNews({ symbol, headlines, pages: trimmedPages });
     const pack: ResearchPack = {
       query,
       searchedAt: new Date().toISOString(),
-      newsScore: score,
+      newsScore: analysed.newsScore,
       headlines,
-      pages: pages.map((p) => ({ ...p, text: p.text.slice(0, 1200) })),
-      summary,
+      pages: trimmedPages,
+      summary: analysed.summary,
     };
     await this.writeCache(query, pack);
     return pack;
+  }
+
+  async read(exchange: string, symbol: string): Promise<{ score: number; points: number; summary: string; updatedAt: string } | null> {
+    const [row] = await this.db
+      .select()
+      .from(newsDeltas)
+      .where(and(eq(newsDeltas.exchange, exchange.toUpperCase()), eq(newsDeltas.symbol, symbol.toUpperCase())))
+      .limit(1);
+    if (!row) return null;
+    return {
+      score: Number(row.score),
+      points: Number(row.points),
+      summary: row.summary,
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  async tape(exchange: string, symbol: string) {
+    const rows = await this.db
+      .select()
+      .from(newsTape)
+      .where(and(eq(newsTape.exchange, exchange.toUpperCase()), eq(newsTape.symbol, symbol.toUpperCase())))
+      .orderBy(desc(newsTape.slotStart))
+      .limit(48);
+    return rows.reverse().map((row) => ({
+      at: row.slotStart.toISOString(),
+      score: Number(row.score),
+      points: Number(row.points),
+      summary: row.summary,
+      headlines: row.headlines ?? [],
+    }));
+  }
+
+  private async saveTape(input: {
+    exchange: string;
+    symbol: string;
+    slotStart: Date;
+    score: number;
+    points: number;
+    summary: string;
+    headlines: ResearchPack["headlines"];
+  }) {
+    const exchange = input.exchange.toUpperCase();
+    const symbol = input.symbol.toUpperCase();
+    await this.db
+      .insert(newsTape)
+      .values({
+        exchange,
+        symbol,
+        slotStart: input.slotStart,
+        score: String(input.score),
+        points: String(input.points),
+        summary: input.summary,
+        headlines: input.headlines.slice(0, 8),
+      })
+      .onConflictDoUpdate({
+        target: [newsTape.exchange, newsTape.symbol, newsTape.slotStart],
+        set: {
+          score: String(input.score),
+          points: String(input.points),
+          summary: input.summary,
+          headlines: input.headlines.slice(0, 8),
+        },
+      });
+    const keep = new Date(input.slotStart.getTime() - 48 * NEWS_SLOT_MS);
+    await this.db.delete(newsTape).where(and(eq(newsTape.exchange, exchange), eq(newsTape.symbol, symbol), lt(newsTape.slotStart, keep)));
+  }
+
+  private async dueItems(items: WatchItem[], slotStart: number): Promise<WatchItem[]> {
+    const rows = await this.db.select().from(newsDeltas);
+    const fresh = new Map(rows.map((row) => [`${row.exchange}:${row.symbol}`, row.updatedAt.getTime()]));
+    return items.filter((item) => {
+      const at = fresh.get(`${item.exchange.toUpperCase()}:${item.symbol.toUpperCase()}`);
+      return at == null || at < slotStart;
+    });
+  }
+
+  private async gather(symbol: string, slotStart: number): Promise<Pick<Gathered, "headlines" | "pages">> {
+    const world = await this.worldForSlot(slotStart);
+    let news: Array<{ title: string; url: string; snippet: string }> = [];
+    try {
+      news = await fetchNewsRss(`${symbol} stock`);
+    } catch {
+      news = [];
+    }
+    const headlines = [...news.slice(0, 4), ...world].filter((item, index, all) => all.findIndex((other) => other.title === item.title) === index).slice(0, 8);
+    const page = headlines[0]?.url ? await scrapePage(headlines[0].url) : null;
+    const pages = page?.text ? [{ ...page, text: page.text.slice(0, 900) }] : [];
+    return { headlines, pages };
+  }
+
+  private async worldForSlot(slotStart: number): Promise<ResearchPack["headlines"]> {
+    if (this.worldSlot === slotStart) return this.worldHeadlines;
+    let search: SearchResult[] = [];
+    let news: Array<{ title: string; url: string; snippet: string }> = [];
+    try {
+      search = await duckDuckGoSearch("India stock market world news");
+    } catch {
+      search = [];
+    }
+    try {
+      news = await fetchNewsRss("Indian stock market");
+    } catch {
+      news = [];
+    }
+    this.worldSlot = slotStart;
+    this.worldHeadlines = [
+      ...news.slice(0, 4),
+      ...search.slice(0, 4).map((item) => ({ title: item.title, url: item.url, snippet: item.snippet })),
+    ].slice(0, 6);
+    return this.worldHeadlines;
+  }
+
+  private async writeDelta(item: WatchItem, score: number, points: number, summary: string) {
+    await this.db
+      .insert(newsDeltas)
+      .values({
+        exchange: item.exchange.toUpperCase(),
+        symbol: item.symbol.toUpperCase(),
+        score: String(score),
+        points: String(points),
+        summary,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [newsDeltas.exchange, newsDeltas.symbol],
+        set: { score: String(score), points: String(points), summary, updatedAt: new Date() },
+      });
+  }
+
+  private async pool<T>(items: T[], limit: number, run: (item: T) => Promise<void>): Promise<void> {
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (cursor < items.length) {
+        const item = items[cursor];
+        cursor += 1;
+        if (item == null) continue;
+        try {
+          await run(item);
+        } catch {
+          /* one symbol must not stop the slot */
+        }
+      }
+    });
+    await Promise.all(workers);
   }
 
   private async readCache(query: string): Promise<ResearchPack | null> {
@@ -91,7 +280,7 @@ export class ResearchService {
       .orderBy(desc(researchSnapshots.createdAt))
       .limit(1);
     if (!row) return null;
-    if (Date.now() - row.createdAt.getTime() > TTL_MS) return null;
+    if (Date.now() - row.createdAt.getTime() > NEWS_SLOT_MS) return null;
     return row.payload as unknown as ResearchPack;
   }
 

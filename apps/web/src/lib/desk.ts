@@ -83,6 +83,20 @@ export type OptionsBoard = {
   stance: string;
   bias: string;
   eod?: { close: string; low: string; high: string; note: string };
+  horizons?: Array<{
+    id: string;
+    label: string;
+    targetAt: string;
+    clamped: boolean;
+    close: string;
+    low: string;
+    high: string;
+    abstain: boolean;
+    floorScale: number;
+    anchor?: string;
+    samples?: number;
+    within?: number | null;
+  }>;
   eodAi?: { close: string; low: string; high: string; note: string };
   activeClose?: string | number | null;
   predictionMode?: "ALGO" | "AI";

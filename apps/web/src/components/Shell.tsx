@@ -17,6 +17,7 @@ const NAV = [
   ["/", "Options", IconOptions],
   ["/stocks", "Stocks", IconStocks],
   ["/training", "Training", IconTraining],
+  ["/news", "News", IconNews],
   ["/trades", "My trades", IconTrades],
   ["/account", "Account", IconAccount],
   ["/settings", "Settings", IconSettings],
@@ -409,6 +410,15 @@ function IconTrades() {
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
       <rect x="5" y="4" width="14" height="16" rx="1" />
       <path d="M8 9h8M8 13h8M8 17h5" />
+    </svg>
+  );
+}
+
+function IconNews() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path d="M5 6h14M5 10h14M5 14h9" />
+      <path d="M5 18h4" />
     </svg>
   );
 }

@@ -81,7 +81,7 @@ export async function boot(env: Env) {
   const trainer = new PaperTrainer(db, paper, journal, ledger);
   const execution = new ExecutionCoordinator(db, risk, paper, live, gate, journal, market, trainer);
   const ai = new AiService(db, crypto, ledger, forecastParams);
-  const research = new ResearchService(db);
+  const research = new ResearchService(db, ai);
   const forecasts = new ForecastEngine(db, market, research, ai, risk, forecastParams, ledger, tuner);
   const signals = new SignalStore(db, market);
   const plays = new PlayStore(db, market, journal);
@@ -103,6 +103,7 @@ export async function boot(env: Env) {
     ledger,
     forecastParams,
     training,
+    research,
   );
 
   const services: AppServices = {
@@ -156,6 +157,28 @@ export async function boot(env: Env) {
   const studyLoop = setInterval(() => {
     void agent.tick().catch((err) => log.warn({ err }, "agent tick failed"));
   }, 60_000);
+  const newsLoop = setInterval(() => {
+    void market
+      .listWatchlist()
+      .then((watch) =>
+        research.runBackground(
+          watch.map((item) => ({
+            exchange: item.exchange,
+            symbol: item.symbol,
+            last: Number(item.lastPrice ?? 0),
+          })),
+        ),
+      )
+      .catch((err) => log.warn({ err }, "news background pass failed"));
+  }, 30_000);
+  void market
+    .listWatchlist()
+    .then((watch) =>
+      research.runBackground(
+        watch.map((item) => ({ exchange: item.exchange, symbol: item.symbol, last: Number(item.lastPrice ?? 0) })),
+      ),
+    )
+    .catch((err) => log.warn({ err }, "initial news pass failed"));
   const playLoop = setInterval(() => {
     void plays.tick(read).catch((err) => log.warn({ err }, "play reconcile failed"));
   }, 18_000);
@@ -182,6 +205,7 @@ export async function boot(env: Env) {
     clearInterval(quoteLoop);
     clearInterval(liveLoop);
     clearInterval(studyLoop);
+    clearInterval(newsLoop);
     clearInterval(playLoop);
     clearInterval(learnLoop);
     if (web && !web.killed) {

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
 import { predictionLedger } from "../../db/schema.js";
 import type { ForecastParams } from "./params.js";
@@ -12,6 +12,8 @@ export type RecordPredictionInput = {
   symbol: string;
   expiry?: string | null;
   sessionDate: string;
+  horizon?: string | null;
+  targetAt?: string | null;
   predictedClose?: number | null;
   predictedPremium?: number | null;
   predictedDirection?: string | null;
@@ -27,6 +29,7 @@ export type ResolveActualInput = {
   exchange: string;
   symbol: string;
   sessionDate: string;
+  horizon?: string | null;
   actualClose?: number | null;
   actualPremium?: number | null;
   actualPnl?: number | null;
@@ -94,6 +97,7 @@ export class PredictionLedger {
           eq(predictionLedger.exchange, input.exchange.toUpperCase()),
           eq(predictionLedger.symbol, input.symbol.toUpperCase()),
           eq(predictionLedger.sessionDate, input.sessionDate),
+          eq(predictionLedger.horizon, input.horizon || "eod"),
         ),
       )
       .limit(1);
@@ -103,6 +107,8 @@ export class PredictionLedger {
       symbol: input.symbol.toUpperCase(),
       expiry: input.expiry ?? null,
       sessionDate: input.sessionDate,
+      horizon: input.horizon || "eod",
+      targetAt: input.targetAt ? new Date(input.targetAt) : null,
       predictedAt: new Date(),
       predictedClose: input.predictedClose != null ? String(input.predictedClose) : null,
       predictedPremium: input.predictedPremium != null ? String(input.predictedPremium) : null,
@@ -118,6 +124,7 @@ export class PredictionLedger {
         .update(predictionLedger)
         .set({
           predictedAt: values.predictedAt,
+          targetAt: values.targetAt ?? existing[0].targetAt,
           predictedClose: values.predictedClose,
           predictedPremium: values.predictedPremium,
           predictedDirection: values.predictedDirection,
@@ -142,6 +149,7 @@ export class PredictionLedger {
           eq(predictionLedger.exchange, input.exchange.toUpperCase()),
           eq(predictionLedger.symbol, input.symbol.toUpperCase()),
           eq(predictionLedger.sessionDate, input.sessionDate),
+          eq(predictionLedger.horizon, input.horizon || "eod"),
         ),
       )
       .limit(1);
@@ -168,6 +176,15 @@ export class PredictionLedger {
       })
       .where(eq(predictionLedger.id, row.id));
     return true;
+  }
+
+  async dueHorizons(now = new Date(), limit = 20) {
+    return this.db
+      .select()
+      .from(predictionLedger)
+      .where(and(eq(predictionLedger.status, "OPEN"), lte(predictionLedger.targetAt, now)))
+      .orderBy(asc(predictionLedger.targetAt))
+      .limit(limit);
   }
 
   async resolveOpenEod(input: {
@@ -200,8 +217,8 @@ export class PredictionLedger {
           inArray(predictionLedger.kind, ["EOD_AI", "EOD_ALGO"]),
         ),
       );
-    const ai = rows.find((r) => r.kind === "EOD_AI");
-    const algo = rows.find((r) => r.kind === "EOD_ALGO");
+    const ai = rows.find((r) => r.kind === "EOD_AI" && r.horizon === "eod") ?? rows.find((r) => r.kind === "EOD_AI");
+    const algo = rows.find((r) => r.kind === "EOD_ALGO" && r.horizon === "eod") ?? rows.find((r) => r.kind === "EOD_ALGO");
     const preferAi = input.prefer !== "ALGO";
     const pick = preferAi
       ? ai?.predictedClose != null
@@ -292,6 +309,37 @@ export class PredictionLedger {
       .join("\n");
   }
 
+  async horizonCalibration(input: { exchange: string; symbol: string; sessionDate: string }): Promise<Record<string, { samples: number; within: number | null }>> {
+    const rows = await this.db
+      .select()
+      .from(predictionLedger)
+      .where(
+        and(
+          eq(predictionLedger.kind, "EOD_ALGO"),
+          eq(predictionLedger.status, "RESOLVED"),
+          eq(predictionLedger.exchange, input.exchange.toUpperCase()),
+          eq(predictionLedger.symbol, input.symbol.toUpperCase()),
+          eq(predictionLedger.sessionDate, input.sessionDate),
+        ),
+      );
+    const buckets = new Map<string, number[]>();
+    for (const row of rows) {
+      const predicted = num(row.predictedClose);
+      const actual = num(row.actualClose);
+      if (predicted == null || actual == null) continue;
+      const list = buckets.get(row.horizon) ?? [];
+      list.push(Math.abs(actual - predicted));
+      buckets.set(row.horizon, list);
+    }
+    const out: Record<string, { samples: number; within: number | null }> = {};
+    for (const [horizon, errors] of buckets) {
+      const sorted = [...errors].sort((a, b) => a - b);
+      const mid = sorted[Math.floor(sorted.length / 2)] ?? null;
+      out[horizon] = { samples: errors.length, within: mid };
+    }
+    return out;
+  }
+
   async listResolvedAlgo(
     limit = 60,
     filter?: { exchange: string; symbol: string },
@@ -310,6 +358,7 @@ export class PredictionLedger {
     const cond = [
       eq(predictionLedger.kind, "EOD_ALGO"),
       eq(predictionLedger.status, "RESOLVED"),
+      eq(predictionLedger.horizon, "eod"),
     ];
     if (filter) {
       cond.push(eq(predictionLedger.exchange, filter.exchange.toUpperCase()));

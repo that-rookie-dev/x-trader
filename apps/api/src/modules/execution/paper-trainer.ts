@@ -23,6 +23,8 @@ export type TrainBuyInput = {
     compareTag?: string | null;
     aiConfidence?: number | null;
     why?: string | null;
+    horizon?: string | null;
+    targetAt?: string | null;
   };
 };
 
@@ -101,6 +103,8 @@ export class PaperTrainer {
       void this.ledger
         .record({
           kind: side === "SELL" ? "PAPER_SELL" : "PAPER_BUY",
+          horizon: input.prediction?.horizon ?? "eod",
+          targetAt: input.prediction?.targetAt ?? null,
           exchange: input.exchange,
           symbol: input.symbol,
           sessionDate,

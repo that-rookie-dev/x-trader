@@ -399,6 +399,36 @@ export const quotesCache = pgTable(
   (t) => [uniqueIndex("quotes_symbol").on(t.exchange, t.symbol)],
 );
 
+export const newsDeltas = pgTable(
+  "news_deltas",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    exchange: text("exchange").notNull(),
+    symbol: text("symbol").notNull(),
+    score: numeric("score", { precision: 6, scale: 4 }).notNull().default("0"),
+    points: numeric("points", { precision: 18, scale: 4 }).notNull().default("0"),
+    summary: text("summary").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("news_delta_symbol").on(t.exchange, t.symbol)],
+);
+
+export const newsTape = pgTable(
+  "news_tape",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    exchange: text("exchange").notNull(),
+    symbol: text("symbol").notNull(),
+    slotStart: timestamp("slot_start", { withTimezone: true }).notNull(),
+    score: numeric("score", { precision: 6, scale: 4 }).notNull().default("0"),
+    points: numeric("points", { precision: 18, scale: 4 }).notNull().default("0"),
+    summary: text("summary").notNull().default(""),
+    headlines: jsonb("headlines").$type<Array<{ title: string; url: string; snippet: string }>>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("news_tape_slot").on(t.exchange, t.symbol, t.slotStart)],
+);
+
 export const researchSnapshots = pgTable("research_snapshots", {
   id: uuid("id").primaryKey().defaultRandom(),
   query: text("query").notNull(),
@@ -503,6 +533,8 @@ export const predictionLedger = pgTable(
     symbol: text("symbol").notNull(),
     expiry: text("expiry"),
     sessionDate: text("session_date").notNull(),
+    horizon: text("horizon").notNull().default("eod"),
+    targetAt: timestamp("target_at", { withTimezone: true }),
     predictedAt: timestamp("predicted_at", { withTimezone: true }).notNull().defaultNow(),
     predictedClose: numeric("predicted_close", { precision: 18, scale: 4 }),
     predictedPremium: numeric("predicted_premium", { precision: 18, scale: 4 }),
@@ -520,7 +552,7 @@ export const predictionLedger = pgTable(
     status: text("status").notNull().default("OPEN"),
   },
   (t) => [
-    uniqueIndex("prediction_ledger_day_kind").on(t.kind, t.exchange, t.symbol, t.sessionDate),
+    uniqueIndex("prediction_ledger_day_kind").on(t.kind, t.exchange, t.symbol, t.sessionDate, t.horizon),
     index("prediction_ledger_status").on(t.status, t.sessionDate),
   ],
 );
