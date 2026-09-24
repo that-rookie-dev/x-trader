@@ -40,6 +40,11 @@ export default function OptionsPage() {
   const [horizonId, setHorizonId] = useState("15m");
   const view = useMemo(() => (board ? applyHorizon(board, horizonId) : null), [board, horizonId]);
   const horizon = board?.horizons?.find((row) => row.id === horizonId) ?? null;
+
+  useEffect(() => {
+    const current = board?.horizons?.find((row) => row.id === horizonId);
+    if (current && current.id !== "eod" && current.clamped) setHorizonId("eod");
+  }, [board?.horizons, horizonId]);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [selected, setSelected] = useState<{ symbol: string; kind: "CE" | "PE" | "FUT" } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -430,23 +435,31 @@ export default function OptionsPage() {
               </div>
               {board?.horizons?.length ? (
                 <div className="stage-tabs horizon-tabs">
-                  {board.horizons.map((item) => (
+                  {board.horizons.map((item) => {
+                    const pastClose = item.id !== "eod" && item.clamped;
+                    return (
                     <button
                       key={item.id}
                       type="button"
                       className={`stage-tab ${horizonId === item.id ? "on" : ""}`}
+                      disabled={pastClose}
                       title={
-                        item.samples
+                        pastClose
+                          ? "This horizon would pass 15:30 IST"
+                          : item.samples
                           ? `${item.label}: within ${showDec(item.within, 0)} points on ${item.samples} resolves`
                           : item.abstain
                             ? "Wait — short and long paths disagree"
                             : item.label
                       }
-                      onClick={() => setHorizonId(item.id)}
+                      onClick={() => {
+                        if (!pastClose) setHorizonId(item.id);
+                      }}
                     >
                       {item.id === "eod" ? "EOD" : item.id}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
               <div className="stage-side">

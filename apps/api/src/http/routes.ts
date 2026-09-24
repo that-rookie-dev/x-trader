@@ -16,6 +16,7 @@ import { buildOptionsBoard } from "../modules/forecast/board.js";
 import { marketBlocksPaper } from "../modules/forecast/chain-tape.js";
 import { fetchPreviewImage, linkPreview } from "../modules/research/opengraph.js";
 import { newsSlotMs } from "../modules/research/service.js";
+import { cashSessionOpen } from "../modules/forecast/chain-tape.js";
 
 export function registerRoutes(app: Express, s: AppServices): void {
   app.get("/api/health", (_req, res) => {
@@ -1091,6 +1092,7 @@ export function registerRoutes(app: Express, s: AppServices): void {
         entries,
         nextAt,
         slotMinutes,
+        paused: !cashSessionOpen(),
         work: s.research.workStatus(),
       });
     }),

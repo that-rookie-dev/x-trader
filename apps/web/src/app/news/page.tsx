@@ -5,7 +5,7 @@ import { showDec } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 
 type Name = { exchange: string; symbol: string };
-type Headline = { title: string; url: string; snippet: string; note?: string; image?: string };
+type Headline = { title: string; url: string; snippet: string; note?: string; image?: string; source?: string };
 type Entry = { at: string; score: number; points: number; summary: string; headlines: Headline[] };
 type Feed = {
   active?: boolean;
@@ -16,12 +16,10 @@ type Feed = {
   entries: Entry[];
   work?: { running: boolean; phase: "idle" | "scraping" | "reading" | "scoring"; symbol: string };
   slotMinutes?: number;
+  paused?: boolean;
 };
-type Preview = { url: string; site: string; title: string; description: string; image: string };
-
 const MEMORY = "xtrader-news-symbol";
 const SLOTS = [15, 30, 60] as const;
-const previews = new Map<string, Preview | null>();
 
 const DELTA_TIP =
   "Points added to every horizon close, the same amount on Algo and AI. A positive delta lifts the predicted price. A negative delta pulls it down. A score of 1 or −1 moves the close by 0.15% of the last price, and never more than 0.4%. Zero leaves the close on the other inputs.";
@@ -163,8 +161,8 @@ export default function NewsPage() {
         </label>
         <SlotPick minutes={slotMinutes} onPick={(minutes) => void setIntervalMinutes(minutes)} />
         <div className="news-next">
-          <span>Next read</span>
-          <b className="mono">{clockRemain(remain)}</b>
+          <span>{feed.paused ? "Reads" : "Next read"}</span>
+          <b className="mono">{feed.paused ? "Paused" : clockRemain(remain)}</b>
         </div>
         <Stat label="Delta" value={`${points > 0 ? "+" : ""}${showDec(points, 1)}`} tone={tone(points)} tip={DELTA_TIP} />
         <Stat label="Score" value={`${score > 0 ? "+" : ""}${showDec(score, 2)}`} tone={tone(score)} tip={SCORE_TIP} />
@@ -187,13 +185,15 @@ export default function NewsPage() {
             <p className="news-say">{phaseLine(feed.work.phase, feed.work.symbol || feed.symbol || "")}<i className="news-caret" /></p>
           </article>
         ) : null}
-        <article className="news-bubble">
-          <header>
-            <time>{clock(new Date(nextAt).toISOString())}</time>
-            <span>NEXT READ</span>
-          </header>
-          <p>The next pass runs in {clockRemain(remain)}. Until then this delta stays as it is.</p>
-        </article>
+        {feed.paused ? (
+          <article className="news-bubble">
+            <header>
+              <time>09:15</time>
+              <span>PAUSED</span>
+            </header>
+            <p>The market is closed. News stays on the last session read and starts again at 09:15 IST.</p>
+          </article>
+        ) : null}
         {feed.entries.length === 0 ? (
           <article className="news-bubble">
             <header>
@@ -222,11 +222,14 @@ export default function NewsPage() {
                   {live && typed.length < (entry.summary || "").length ? <i className="news-caret" /> : null}
                 </p>
                 {entry.headlines.length > 0 ? (
-                  <div className="news-cards">
-                    {entry.headlines.map((item) => (
-                      <LinkCard key={item.url || item.title} item={item} symbol={feed.symbol ?? ""} />
-                    ))}
-                  </div>
+                  <details className="news-fold">
+                    <summary>{entry.headlines.length} sources</summary>
+                    <div className="news-rows">
+                      {entry.headlines.map((item) => (
+                        <StoryRow key={item.url || item.title} item={item} />
+                      ))}
+                    </div>
+                  </details>
                 ) : null}
               </article>
             );
@@ -247,50 +250,15 @@ function Stat({ label, value, tone: toneName, tip }: { label: string; value: str
   );
 }
 
-function LinkCard({ item, symbol }: { item: Headline; symbol: string }) {
-  const [card, setCard] = useState<Preview | null | undefined>(previews.get(item.url));
-  const [imageOk, setImageOk] = useState(true);
-
-  useEffect(() => {
-    if (!item.url || previews.has(item.url)) {
-      setCard(previews.get(item.url) ?? null);
-      return;
-    }
-    let cancelled = false;
-    api<Preview>(`/api/news/preview?url=${encodeURIComponent(item.url)}`)
-      .then((data) => {
-        const next = data.title || data.description || data.image ? data : null;
-        previews.set(item.url, next);
-        if (!cancelled) setCard(next);
-      })
-      .catch(() => {
-        previews.set(item.url, null);
-        if (!cancelled) setCard(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [item.url]);
-
-  const title = card?.title || item.title;
-  const description = card?.description || item.snippet;
-  const site = card?.site || host(item.url);
-  const remote = (imageOk ? card?.image || item.image : "") || "";
-  const image = remote ? `/api/news/image?url=${encodeURIComponent(remote)}` : "";
-
+function StoryRow({ item }: { item: Headline }) {
+  const site = item.source || host(item.url);
   return (
-    <a className="news-card" href={item.url} target="_blank" rel="noreferrer">
-      {image ? (
-        <img src={image} alt="" onError={() => setImageOk(false)} />
-      ) : (
-        <span className="news-shot" aria-hidden="true" />
-      )}
-      <div>
-        <small>{site || "SOURCE"}</small>
-        <strong>{title || "Untitled"}</strong>
-        {description ? <span>{description}</span> : null}
-        {item.note ? <em>{symbol ? `${symbol}: ` : ""}{item.note}</em> : null}
-      </div>
+    <a className="news-row" href={item.url} target="_blank" rel="noreferrer">
+      <small>{site || "Source"}</small>
+      <span>
+        <strong>{item.title || "Untitled"}</strong>
+        {item.note ? <em>{item.note}</em> : null}
+      </span>
     </a>
   );
 }

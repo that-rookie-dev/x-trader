@@ -1,25 +1,11 @@
 "use client";
 
-import { HorizonCompare, type ComparePoint } from "@/components/HorizonCompare";
 import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
 import { showDec, showRupee } from "@/lib/format";
 import { useEffect, useState } from "react";
 
-const HORIZONS = ["5m", "15m", "30m", "1h", "4h", "6h", "eod"] as const;
-
-type Compare = {
-  symbol: string | null;
-  exchange: string | null;
-  horizon: string;
-  sessionDate: string;
-  symbols: Array<{ exchange: string; symbol: string }>;
-  points: ComparePoint[];
-};
-
 type Memory = { id: string; strategy: string; regime: string; sampleCount: number; wins: number; losses: number; expectancy?: string | null };
-type Holding = { instrument: { symbol: string; exchange: string }; quantity: string; averagePrice: string; lastPrice?: string; pnl?: string };
-type BrokerPos = { instrument: { symbol: string; exchange: string }; quantity: string; lastPrice?: string; pnl?: string };
 type PaperPos = {
   id: string;
   symbol: string;
@@ -36,8 +22,6 @@ type PaperPos = {
 
 type Desk = {
   journal: { memory: Memory[] };
-  holdings: Holding[] | null;
-  brokerPos: BrokerPos[] | null;
   paper?: {
     cash: string;
     paperAutopilot: boolean;
@@ -81,9 +65,6 @@ type Desk = {
 export default function TradesPage() {
   const [desk, setDesk] = useState<Desk | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>("5m");
-  const [symbol, setSymbol] = useState("");
-  const [compare, setCompare] = useState<Compare | null>(null);
 
   async function load() {
     try {
@@ -100,36 +81,9 @@ export default function TradesPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadCompare() {
-      try {
-        const data = await api<Compare>(`/api/horizon/compare?symbol=${encodeURIComponent(symbol)}&horizon=${horizon}`);
-        if (cancelled) return;
-        setCompare(data);
-        if (data.symbol && data.symbol !== symbol) setSymbol(data.symbol);
-      } catch {
-        /* desk error already covers a dead API */
-      }
-    }
-    void loadCompare();
-    const id = window.setInterval(() => void loadCompare(), 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [symbol, horizon]);
-
-  const memory = desk?.journal.memory ?? [];
-  const paperMem = memory.filter((m) => m.id); // all memory; expectancy from paper+live
-  const wins = paperMem.reduce((sum, row) => sum + row.wins, 0);
-  const losses = paperMem.reduce((sum, row) => sum + row.losses, 0);
   const paperOpen = desk?.paper?.positions ?? [];
   const paperClosed = desk?.paper?.closed ?? [];
   const marketClosed = Boolean(desk?.paper?.marketClosed);
-  const learning = desk?.learning;
-  const branchMae =
-    learning?.predictionMode === "AI" ? learning?.ai?.scoreMae : learning?.algo?.scoreMae;
 
   async function closePaper(id: string) {
     if (marketClosed) {
@@ -161,8 +115,8 @@ export default function TradesPage() {
     <div className="guide">
       <PageHeader
         kicker="My trades"
-        title="Training + Zerodha"
-        lede="Paper wallet trains predictions locally. Zerodha holdings stay read-only — this app never sends a live order."
+        title="Paper book"
+        lede="Local paper cash, open trades, and closed trades. The Zerodha account stays on My Account."
       />
       {error ? <p className="down">{error}</p> : null}
       {marketClosed ? <p className="muted">Market closed — paper buy/sell/topup blocked until the next session.</p> : null}
@@ -179,55 +133,9 @@ export default function TradesPage() {
           <div className="value">{paperOpen.length}</div>
         </div>
         <div className="card kpi">
-          <div className="label">Pred MAE</div>
-          <div className="value mono">
-            {(branchMae ?? learning?.mae) != null ? `${showDec(branchMae ?? learning?.mae, 2)}%` : "—"}
-          </div>
+          <div className="label">Paper closed</div>
+          <div className="value">{paperClosed.length}</div>
         </div>
-        <div className="card kpi">
-          <div className="label">Dir hit</div>
-          <div className="value mono">
-            {learning?.hitRate != null ? `${showDec(learning.hitRate * 100, 0)}%` : wins + losses === 0 ? "—" : `${wins}/${losses}`}
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="section-head">
-          <h2>Horizon compare</h2>
-          <span className="muted">{compare?.sessionDate ?? "today"} · every quote, saved each minute</span>
-        </div>
-        <div className="compare-bar">
-          <label className="news-pick">
-            <span>Symbol</span>
-            <select value={compare?.symbol ?? symbol} onChange={(event) => setSymbol(event.target.value)}>
-              {(compare?.symbols ?? []).map((item) => (
-                <option key={`${item.exchange}:${item.symbol}`} value={item.symbol}>
-                  {item.symbol}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="news-slot">
-            <span>Horizon</span>
-            <div>
-              {HORIZONS.map((id) => (
-                <button key={id} type="button" className={id === horizon ? "on" : ""} onClick={() => setHorizon(id)}>
-                  {id === "eod" ? "EOD" : id}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="compare-key">
-            <i className="mkt" /> Market
-            <i className="algo" /> Algo
-            <i className="ai" /> AI
-          </div>
-        </div>
-        <p className="muted compare-note">
-          Market is the live price on each quote. Algo and AI are the horizon price named on that same quote. A minute of quotes is written together.
-        </p>
-        <HorizonCompare points={compare?.points ?? []} />
       </div>
 
       <div className="card">
@@ -312,68 +220,6 @@ export default function TradesPage() {
         )}
       </div>
 
-      <div className="card">
-        <div className="section-head">
-          <h2>What you own</h2>
-          <span className="muted">Zerodha</span>
-        </div>
-        {!desk?.holdings ? (
-          <p className="muted">Connect Zerodha to see holdings.</p>
-        ) : desk.holdings.length === 0 ? (
-          <p className="muted">No stock holdings right now.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Qty</th>
-                <th>Bought at</th>
-                <th>Now</th>
-                <th>P&L</th>
-              </tr>
-            </thead>
-            <tbody>
-              {desk.holdings.map((row) => (
-                <tr key={`${row.instrument.exchange}:${row.instrument.symbol}`}>
-                  <td>{row.instrument.symbol}</td>
-                  <td className="mono">{showDec(row.quantity, 0)}</td>
-                  <td className="mono">{showDec(row.averagePrice)}</td>
-                  <td className="mono">{row.lastPrice != null ? showDec(row.lastPrice) : "—"}</td>
-                  <td className="mono">{row.pnl != null ? showDec(row.pnl) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {desk?.brokerPos && desk.brokerPos.length > 0 ? (
-        <div className="card">
-          <div className="section-head">
-            <h2>Zerodha positions</h2>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Contract</th>
-                <th>Qty</th>
-                <th>Now</th>
-                <th>P&L</th>
-              </tr>
-            </thead>
-            <tbody>
-              {desk.brokerPos.map((row) => (
-                <tr key={`${row.instrument.exchange}:${row.instrument.symbol}`}>
-                  <td>{row.instrument.symbol}</td>
-                  <td className="mono">{showDec(row.quantity, 0)}</td>
-                  <td className="mono">{row.lastPrice != null ? showDec(row.lastPrice) : "—"}</td>
-                  <td className="mono">{row.pnl != null ? showDec(row.pnl) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
     </div>
   );
 }

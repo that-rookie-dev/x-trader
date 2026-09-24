@@ -412,8 +412,9 @@ export class AiService {
   /** News and scraped pages are scored only by the active model. */
   async analyzeNews(input: {
     symbol: string;
-    headlines: Array<{ title: string; snippet?: string }>;
+    headlines: Array<{ title: string; snippet?: string; source?: string }>;
     pages: Array<{ title?: string; text: string }>;
+    desk?: string;
   }): Promise<{ ok: true; newsScore: number; summary: string; notes: Array<{ index: number; line: string }> } | { ok: false; summary: string }> {
     const active = await this.activeRow();
     if (!active?.modelId) {
@@ -426,22 +427,26 @@ export class AiService {
         model,
         schema: z.object({
           newsScore: z.number().min(-1).max(1),
-          summary: z.string(),
+          summary: z.string().max(700),
           notes: z.array(z.object({
             index: z.number().int().min(0).max(7),
             line: z.string().max(180),
           })).max(8),
         }),
-        system: `You judge whether current world and market news can move one Indian cash or index symbol during this session.
-Return newsScore from -1 (clear downside) to 1 (clear upside) and a one-sentence summary naming the item that matters.
-Ignore headlines that do not change this symbol. If nothing in the sources can move it, newsScore is 0.
-Also return notes: one entry per headline index you were given. Each line is at most 18 words. Say whether that headline affects the symbol this session, and if it does, how. If it does not, say it does not move the symbol.
-You never place orders.`,
-        prompt: JSON.stringify({
-          symbol: input.symbol,
-          headlines: input.headlines.slice(0, 8),
-          pages: input.pages.slice(0, 3).map((page) => ({ title: page.title, text: page.text.slice(0, 900) })),
-        }).slice(0, 12_000),
+        system: `You write the news message for one Indian cash or index symbol this session.
+Use the desk line (local price, bias, band, recent closes) and the stories (titles, snippets, and page text). Ignore stories that cannot move this symbol.
+newsScore is the delta, from -1 (clear downside) to 1 (clear upside). 0 means the stories do not change the forecast.
+summary is the message a reader sees: two or three sentences. Say what in the news can move the symbol, whether that agrees with the local tape, and how strong the shift is. Do not list links. Do not place orders.
+notes may be empty.`,
+        prompt: [
+          input.symbol,
+          input.desk ? `desk ${input.desk}` : "",
+          ...input.headlines.slice(0, 8).map((item, index) => {
+            const snippet = (item.snippet ?? "").replace(/\s+/g, " ").slice(0, 160);
+            return `${index + 1}. ${item.source ?? "src"} | ${item.title} | ${snippet}`;
+          }),
+          ...input.pages.slice(0, 4).map((page, index) => `page ${index + 1} ${(page.title ?? "").slice(0, 80)} | ${page.text.replace(/\s+/g, " ").slice(0, 500)}`),
+        ].filter(Boolean).join("\n").slice(0, 14_000),
       });
       await this.db.insert(agentDecisions).values({
         profileId: active.id,

@@ -1,9 +1,10 @@
 import { and, desc, eq, lt } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
-import { appSettings, newsDeltas, newsTape, researchSnapshots } from "../../db/schema.js";
+import { appSettings, candles, forecasts, instruments, newsDeltas, newsTape, quotesCache, researchSnapshots } from "../../db/schema.js";
 import type { AiService } from "../ai/service.js";
 import { duckDuckGoSearch, type SearchResult } from "./duckduckgo.js";
-import { fetchNewsRss } from "./news.js";
+import { fetchNewsRss, pickDiverse, publisherLabel } from "./news.js";
+import { cashSessionOpen } from "../forecast/chain-tape.js";
 import { scrapePage, type ScrapedPage } from "./scrape.js";
 
 export function newsSlotMs(minutes: number): number {
@@ -24,7 +25,7 @@ export interface ResearchPack {
   query: string;
   searchedAt: string;
   newsScore: number;
-  headlines: Array<{ title: string; url: string; snippet: string; note?: string; image?: string }>;
+  headlines: Array<{ title: string; url: string; snippet: string; note?: string; image?: string; source?: string }>;
   pages: ScrapedPage[];
   summary: string;
 }
@@ -54,6 +55,7 @@ export class ResearchService {
    */
   async runBackground(items: WatchItem[]): Promise<number> {
     if (this.running || items.length === 0) return 0;
+    if (!cashSessionOpen()) return 0;
     if (!(await this.ai.modelReady())) return 0;
     const slotMs = await this.slotMs();
     const slotStart = Math.floor(Date.now() / slotMs) * slotMs;
@@ -76,10 +78,11 @@ export class ResearchService {
       for (const item of gathered) {
         this.phase = "scoring";
         this.phaseSymbol = item.symbol;
+        const desk = await this.localBrief(item.exchange, item.symbol, item.last);
         const analysed =
           item.headlines.length === 0 && item.pages.length === 0
             ? { ok: true as const, newsScore: 0, summary: "No headlines this slot.", notes: [] }
-            : await this.ai.analyzeNews({ symbol: item.symbol, headlines: item.headlines, pages: item.pages });
+            : await this.ai.analyzeNews({ symbol: item.symbol, headlines: item.headlines, pages: item.pages, desk });
         if (!analysed.ok) break;
         const points = newsPointsFromScore(analysed.newsScore, item.last);
         const headlines = item.headlines.map((headline, index) => ({
@@ -232,6 +235,48 @@ export class ResearchService {
     });
   }
 
+  /** One short line: live price, bias, session band, and the last few 5-minute closes. */
+  private async localBrief(exchange: string, symbol: string, last: number): Promise<string> {
+    const parts: string[] = [];
+    if (last > 0) parts.push(`last ${Math.round(last)}`);
+    const [quote] = await this.db
+      .select({ last: quotesCache.lastPrice })
+      .from(quotesCache)
+      .where(and(eq(quotesCache.exchange, exchange.toUpperCase()), eq(quotesCache.symbol, symbol.toUpperCase())))
+      .limit(1);
+    if (quote && !(last > 0)) parts.push(`last ${Math.round(Number(quote.last))}`);
+    const [forecast] = await this.db
+      .select({ bias: forecasts.bias, confidence: forecasts.confidence, payload: forecasts.payload })
+      .from(forecasts)
+      .where(and(eq(forecasts.exchange, exchange.toUpperCase()), eq(forecasts.symbol, symbol.toUpperCase())))
+      .limit(1);
+    if (forecast) {
+      parts.push(forecast.bias);
+      const conf = Number(forecast.confidence);
+      if (Number.isFinite(conf)) parts.push(`conf ${conf.toFixed(2)}`);
+      const session = (forecast.payload as { session?: { expectedLow?: string; expectedHigh?: string } } | null)?.session;
+      const low = Number(session?.expectedLow);
+      const high = Number(session?.expectedHigh);
+      if (low > 0 && high > 0) parts.push(`band ${Math.round(low)}-${Math.round(high)}`);
+    }
+    const [instrument] = await this.db
+      .select({ id: instruments.id })
+      .from(instruments)
+      .where(and(eq(instruments.exchange, exchange.toUpperCase()), eq(instruments.symbol, symbol.toUpperCase())))
+      .limit(1);
+    if (instrument) {
+      const bars = await this.db
+        .select({ close: candles.close })
+        .from(candles)
+        .where(and(eq(candles.instrumentId, instrument.id), eq(candles.intervalMinutes, 5)))
+        .orderBy(desc(candles.bucketStart))
+        .limit(8);
+      const closes = bars.map((bar) => Math.round(Number(bar.close))).filter((n) => n > 0).reverse();
+      if (closes.length) parts.push(`m5 ${closes.join(",")}`);
+    }
+    return parts.join(" ");
+  }
+
   private async gather(symbol: string, slotStart: number): Promise<Pick<Gathered, "headlines" | "pages">> {
     const world = await this.worldForSlot(slotStart);
     let news: Array<{ title: string; url: string; snippet: string }> = [];
@@ -246,13 +291,21 @@ export class ResearchService {
     } catch {
       search = [];
     }
-    const headlines = [
-      ...news,
-      ...search.slice(0, 4).map((item) => ({ title: item.title, url: item.url, snippet: item.snippet })),
-      ...world,
-    ].filter((item, index, all) => all.findIndex((other) => other.title === item.title) === index).slice(0, 8);
-    const page = headlines[0]?.url ? await scrapePage(headlines[0].url) : null;
-    const pages = page?.text ? [{ ...page, text: page.text.slice(0, 900) }] : [];
+    const headlines = pickDiverse(
+      [
+        ...news,
+        ...search.slice(0, 6).map((item) => ({ title: item.title, url: item.url, snippet: item.snippet })),
+        ...world,
+      ],
+      8,
+      3,
+    ).map((item) => ({ ...item, source: publisherLabel(item) }));
+    const pages: ScrapedPage[] = [];
+    for (const headline of headlines.slice(0, 4)) {
+      if (!headline.url) continue;
+      const page = await scrapePage(headline.url);
+      if (page?.text) pages.push({ ...page, text: page.text.replace(/\s+/g, " ").slice(0, 500) });
+    }
     return { headlines, pages };
   }
 

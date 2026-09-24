@@ -1,5 +1,6 @@
 "use client";
 
+import { HorizonCompareCard } from "@/components/HorizonCompareCard";
 import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
 import { showDec } from "@/lib/format";
@@ -114,6 +115,8 @@ export default function TrainingPage() {
         lede="Whitelist-only from Settings. While the market is open, each scan cycle fills 0→100% then restarts. After close, one tune cycle runs and stays at 100% until the next session."
       />
       {error ? <p className="down">{error}</p> : null}
+
+      <HorizonCompareCard />
 
       <div className="card train-progress-card">
         <div className="section-head">

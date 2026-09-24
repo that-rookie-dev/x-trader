@@ -176,17 +176,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function topupPaper() {
-    try {
-      const { cash } = await api<{ cash: string }>("/api/paper/topup", { method: "POST", body: "{}" });
-      setBoot((prev) =>
-        prev ? { ...prev, settings: { ...prev.settings, paperCash: cash } } : prev,
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "topup failed");
-    }
-  }
-
   const paperCash = boot?.settings.paperCash;
   const paperLow = paperCash != null && Number(paperCash) < 500;
 
@@ -323,9 +312,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
               AI
             </button>
           </div>
-          <button type="button" className="btn" title="Add ₹25,000 paper cash" onClick={() => void topupPaper()}>
-            +₹25k
-          </button>
           <button
             type="button"
             className="btn"

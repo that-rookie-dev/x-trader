@@ -54,7 +54,14 @@ export function sessionClock(now: Date, expiry: string | null, params?: Forecast
 
 /** True when paper transactions must be blocked (PRE-OPEN / CLOSED). */
 export function marketBlocksPaper(now = new Date()): boolean {
-  return sessionClock(now, null).cutoff;
+  return !cashSessionOpen(now);
+}
+
+/** Cash session is 09:15–15:30 IST, Monday to Friday. */
+export function cashSessionOpen(now = new Date()): boolean {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(now);
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  return !sessionClock(now, null).cutoff;
 }
 
 export function mapInvalidated(bias: ForecastBias, last: number, expectedLow: number, expectedHigh: number): boolean {
