@@ -12,7 +12,7 @@ export function newsSlotMs(minutes: number): number {
   return slot * 60 * 1000;
 }
 
-/** Same shift for Algo and AI: a full score moves the close by 0.15% of spot, capped at 0.4%. */
+/** Remaining session impact. Score 1 is +0.15% of spot, and the shift never exceeds 0.4%. */
 export function newsPointsFromScore(score: number, last: number): number {
   if (!(last > 0) || !Number.isFinite(score)) return 0;
   const capped = Math.max(-1, Math.min(1, score));

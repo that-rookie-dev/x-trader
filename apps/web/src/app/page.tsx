@@ -26,6 +26,58 @@ function premiumErrPct(ltp: string | null | undefined, eod: string | null | unde
   return ((act - pred) / act) * 100;
 }
 
+type OpenBuy = {
+  id: string;
+  exchange: string;
+  symbol: string;
+  quantity: number;
+  entry: number;
+  mark: number | null;
+};
+
+type BuyLine = OpenBuy & { live: number | null; pnl: number | null };
+
+function liveBuyBook(buys: OpenBuy[], board: OptionsBoard | null): { lines: BuyLine[]; total: number; marked: number } {
+  const lines = buys.map((buy) => {
+    const leg = findLeg(board, buy.symbol);
+    const fromChain = leg?.lastPrice != null ? Number(leg.lastPrice) : null;
+    const live = fromChain != null && Number.isFinite(fromChain) ? fromChain : buy.mark;
+    const pnl = live != null && Number.isFinite(live) && Number.isFinite(buy.entry) ? (live - buy.entry) * buy.quantity : null;
+    return { ...buy, live, pnl };
+  });
+  const marked = lines.filter((line) => line.pnl != null);
+  return { lines, total: marked.reduce((sum, line) => sum + (line.pnl ?? 0), 0), marked: marked.length };
+}
+
+function OpenPnl({
+  book,
+  error,
+  status,
+}: {
+  book: { lines: BuyLine[]; total: number; marked: number };
+  error: string | null;
+  status: string | null;
+}) {
+  const tone = book.marked === 0 ? "" : book.total > 0 ? "up" : book.total < 0 ? "down" : "";
+  const detail =
+    error ??
+    status ??
+    (book.lines.length === 0
+      ? "No open buy"
+      : book.lines.length === 1
+        ? `${book.lines[0]?.symbol ?? ""} · ${showDec(book.lines[0]?.quantity, 0)} qty`
+        : `${book.lines.length} buys · ${book.marked} marked`);
+  return (
+    <div className="ops-pnl" title="Live value of open paper buys. Each tick reprices the contract.">
+      <div className="ops-pnl-copy">
+        <span className="ops-pnl-kicker">OPEN P&L</span>
+        <span className={`ops-pnl-sub mono ${error ? "down" : ""}`}>{detail}</span>
+      </div>
+      <strong className={`ops-pnl-num mono ${tone}`}>{book.marked ? showSignedRupee(book.total) : "—"}</strong>
+    </div>
+  );
+}
+
 type Name = DeskName;
 type Expiry = { date: string; label: string };
 type Candle = { time: number; open: number; high: number; low: number; close: number };
@@ -48,7 +100,7 @@ export default function OptionsPage() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [selected, setSelected] = useState<{ symbol: string; kind: "CE" | "PE" | "FUT" } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [lots, setLots] = useState(1);
   const [flowMode, setFlowMode] = useState<"BUY" | "SELL">("BUY");
   const [studying, setStudying] = useState(false);
@@ -60,6 +112,7 @@ export default function OptionsPage() {
   const [traceModel, setTraceModel] = useState<string | null>(null);
   const [traceLlm, setTraceLlm] = useState("");
   const [traceStatus, setTraceStatus] = useState<string | null>(null);
+  const [openBuys, setOpenBuys] = useState<OpenBuy[]>([]);
 
   useEffect(() => {
     void api<{ names: Name[]; desk?: { exchange: string; symbol: string; expiry: string | null } | null }>(
@@ -147,9 +200,17 @@ export default function OptionsPage() {
     let cancelled = false;
     async function tick() {
       try {
-        const data = await api<{ quotes: QuoteTick[] }>(`/api/options/quotes?keys=${encodeURIComponent(keys)}`);
+        const extra = [...heldKeys.current].filter((key) => !keys.split(",").includes(key));
+        const all = extra.length ? `${keys},${extra.join(",")}` : keys;
+        const data = await api<{ quotes: QuoteTick[] }>(`/api/options/quotes?keys=${encodeURIComponent(all)}`);
         if (cancelled || !data.quotes.length) return;
         setBoard((prev) => (prev ? applyLiveQuotes(prev, data.quotes) : prev));
+        setOpenBuys((prev) =>
+          prev.map((buy) => {
+            const hit = data.quotes.find((quote) => quote.exchange === buy.exchange && quote.symbol === buy.symbol && quote.lastPrice);
+            return hit?.lastPrice ? { ...buy, mark: Number(hit.lastPrice) } : buy;
+          }),
+        );
         const spot = data.quotes.find((quote) => quote.exchange === exchange && quote.symbol === symbol);
         if (spot?.lastPrice) setCandles((prev) => applyTickCandle(prev, Number(spot.lastPrice), Date.now()));
       } catch {
@@ -188,7 +249,40 @@ export default function OptionsPage() {
   }, [symbol, exchange]);
 
   const liveKeys = useRef<Set<string>>(new Set());
+  const heldKeys = useRef<Set<string>>(new Set());
   liveKeys.current = new Set(board ? quoteKeys(board).split(",") : []);
+  heldKeys.current = new Set(openBuys.map((buy) => `${buy.exchange}:${buy.symbol}`));
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      api<{ positions: Array<{ id: string; exchange: string; symbol: string; direction: string; quantity: string; averageEntry: string; currentPrice?: string | null }> }>(
+        "/api/paper",
+      )
+        .then((state) => {
+          if (!alive) return;
+          setOpenBuys(
+            state.positions
+              .filter((row) => row.direction === "LONG")
+              .map((row) => ({
+                id: row.id,
+                exchange: row.exchange,
+                symbol: row.symbol,
+                quantity: Number(row.quantity),
+                entry: Number(row.averageEntry),
+                mark: row.currentPrice != null ? Number(row.currentPrice) : null,
+              })),
+          );
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const id = window.setInterval(load, 4000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     if (!symbol) return;
@@ -204,6 +298,10 @@ export default function OptionsPage() {
       const key = `${tick.exchange}:${tick.symbol}`;
       if (liveKeys.current.has(key)) {
         setBoard((prev) => (prev ? applyLiveQuotes(prev, [tick]) : prev));
+      }
+      if (heldKeys.current.has(key) && tick.lastPrice) {
+        const px = Number(tick.lastPrice);
+        setOpenBuys((prev) => prev.map((buy) => (buy.exchange === tick.exchange && buy.symbol === tick.symbol ? { ...buy, mark: px } : buy)));
       }
       if (tick.exchange === exchange && tick.symbol === symbol) {
         const at = tick.receivedAt ? Date.parse(tick.receivedAt) : Date.now();
@@ -222,7 +320,6 @@ export default function OptionsPage() {
   async function runStudy() {
     if (!symbol || studying || !board?.aiReady) return;
     setStudying(true);
-    setNote(null);
     setTraceOpen(true);
     setTracePhases([]);
     setTracePrompt(null);
@@ -273,17 +370,14 @@ export default function OptionsPage() {
                 }
               : prev,
           );
-          setNote(result.ai ? "AI study updated." : (result.error ?? "Study finished without an AI view."));
           setTraceStatus(result.ai ? "Study complete." : (result.error ?? "Finished without AI view."));
         } else if (event === "error") {
           const message = String(row.message ?? "Study failed");
-          setNote(message);
           setTraceStatus(message);
         }
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Study failed";
-      setNote(message);
       setTraceStatus(message);
     } finally {
       setStudying(false);
@@ -297,22 +391,8 @@ export default function OptionsPage() {
   }, []);
 
   const vs = vsView(board?.compare);
-  const studyNote = error ?? board?.aiError ?? board?.ai?.why ?? note ?? null;
   const marks = useMemo(() => chartLines(board, horizon, clock), [board?.lastPrice, board?.eod?.close, horizon?.id, horizon?.targetAt, clock]);
-
-  const deskMeta = board
-    ? [
-        board.desk?.clock ?? null,
-        board.desk?.pcr != null ? `PCR ${showDec(board.desk.pcr)}` : null,
-        board.desk?.maxPain != null ? `PAIN ${showDec(board.desk.maxPain)}` : null,
-        board.desk?.ivRank != null ? `IVR ${showDec(board.desk.ivRank * 100, 0)}` : null,
-        board.desk?.adx != null ? `ADX ${showDec(board.desk.adx, 0)}` : null,
-        board?.eod ? `BAND ${showDec(board.eod.low)}–${showDec(board.eod.high)}` : null,
-        vs.hint !== "run study" ? vs.hint : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : null;
+  const book = useMemo(() => liveBuyBook(openBuys, board), [openBuys, board]);
 
   const actualClose =
     board?.predictionScore?.actual ??
@@ -389,36 +469,8 @@ export default function OptionsPage() {
         onClose={() => setTraceOpen(false)}
       />
 
-      <div className="ops-rail card">
-        <div className="ops-row">
-          {deskMeta ? <span className="ops-meta mono">{deskMeta}</span> : null}
-          {board?.desk?.votes?.length ? (
-            <div className="vote-strip" data-coach="votes">
-              {board.desk.votes.map((vote) => (
-                <span
-                  key={vote.name}
-                  className={`vote-chip ${vote.vote > 0 ? "up" : vote.vote < 0 ? "down" : "flat"}`}
-                  title={vote.detail}
-                >
-                  {vote.name.replace("DAILY ", "D ").replace("INTRADAY ", "I ")}
-                  {vote.vote > 0 ? "+" : vote.vote < 0 ? "−" : "·"}
-                </span>
-              ))}
-              {board.desk.vwap ? <span className="vote-chip flat">VWAP {board.desk.vwap}</span> : null}
-              {board.desk.orbHigh ? (
-                <span className="vote-chip flat">
-                  ORB {board.desk.orbLow}–{board.desk.orbHigh}
-                </span>
-              ) : null}
-            </div>
-          ) : (
-            <span className="ops-idle muted">Waiting on chain…</span>
-          )}
-        </div>
-
-        <p className={`ops-note-bar ${error || board?.aiError ? "down" : ""}`} title={studyNote ?? undefined}>
-          {studyNote || "\u00a0"}
-        </p>
+      <div className="ops-rail card" data-coach="votes">
+        <OpenPnl book={book} error={error} status={status} />
       </div>
 
       <div className="desk-body">
@@ -577,7 +629,7 @@ export default function OptionsPage() {
             mode={flowMode}
             onMode={setFlowMode}
             board={board}
-            onBusy={setNote}
+            onBusy={setStatus}
           />
         ) : (
           <div className="card pnl-card empty-pnl">

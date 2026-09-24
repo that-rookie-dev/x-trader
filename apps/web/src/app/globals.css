@@ -1001,10 +1001,48 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 .ops-rail {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
-  padding: 5px 8px !important;
+  padding: 5px 10px !important;
   min-height: 0;
 }
+.ops-pnl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  height: 100%;
+}
+.ops-pnl-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ops-pnl-kicker {
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.ops-pnl-sub {
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ops-pnl-num {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.ops-pnl-num.up { color: var(--up); }
+.ops-pnl-num.down { color: var(--down); }
 .ops-row {
   display: flex;
   align-items: center;
@@ -1192,7 +1230,6 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 .news-page { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 12px; }
 .news-off { margin: 0; color: var(--muted); font-size: var(--fs-body); }
 .news-bar { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-.news-bar h1 { margin: 0; font-family: var(--display); font-size: var(--fs-display); letter-spacing: -0.04em; font-weight: 600; }
 .news-pick { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-kicker); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-family: var(--mono); }
 .news-pick select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-ui); padding: 8px 10px; min-width: 160px; }
 .news-next, .news-stat {
@@ -1278,7 +1315,7 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 .news-bubble header .up { color: var(--up); }
 .news-bubble header .down { color: var(--down); }
 .news-bubble p { margin: 0; }
-.news-say { margin: 0 0 10px; color: var(--text); }
+.news-say { margin: 0 0 10px; color: var(--text); line-height: 1.5; max-width: 72ch; }
 .news-say b { font-weight: 650; }
 .news-caret { display: inline-block; width: 7px; height: 1em; margin-left: 2px; background: var(--accent); vertical-align: text-bottom; animation: pulse-dot 1s steps(1) infinite; }
 .news-fold { margin-top: 8px; }

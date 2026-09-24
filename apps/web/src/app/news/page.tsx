@@ -22,9 +22,9 @@ const MEMORY = "xtrader-news-symbol";
 const SLOTS = [15, 30, 60] as const;
 
 const DELTA_TIP =
-  "Points added to every horizon close, the same amount on Algo and AI. A positive delta lifts the predicted price. A negative delta pulls it down. A score of 1 or −1 moves the close by 0.15% of the last price, and never more than 0.4%. Zero leaves the close on the other inputs.";
+  "Points added to every horizon close, the same amount on Algo and AI. The model scores only the move still ahead of the tape. A score of 1 is 0.15% of the last price, and the shift never exceeds 0.4%. Positive points lift the close. Negative points pull it down. Zero leaves the close on the other inputs.";
 const SCORE_TIP =
-  "The model’s read of whether current news can move this name this session, from −1 to +1. That score becomes the delta. Near zero, news stays out of the forecast. Toward +1 the close rises. Toward −1 it falls.";
+  "The remaining session impact, from −1 to +1, after ignoring news the price has already traded. One stock moves an index only by its weight. A score near zero means the stories do not change the forecast from here.";
 
 export default function NewsPage() {
   const [symbol, setSymbol] = useState("");
@@ -120,7 +120,6 @@ export default function NewsPage() {
         <div className="news-bar">
           <div>
             <p className="eyebrow">NEWS</p>
-            <h1>Read</h1>
           </div>
           <SlotPick minutes={slotMinutes} onPick={(minutes) => void setIntervalMinutes(minutes)} />
         </div>
@@ -136,10 +135,7 @@ export default function NewsPage() {
   return (
     <div className="news-page">
       <div className="news-bar">
-        <div>
-          <p className="eyebrow">NEWS</p>
-          <h1>{feed.symbol ?? "Read"}</h1>
-        </div>
+        <p className="eyebrow">NEWS</p>
         <label className="news-pick">
           <span>Symbol</span>
           <select
@@ -182,7 +178,7 @@ export default function NewsPage() {
               <time>{clock(new Date(now).toISOString())}</time>
               <span>{phaseLabel(feed.work.phase)}</span>
             </header>
-            <p className="news-say">{phaseLine(feed.work.phase, feed.work.symbol || feed.symbol || "")}<i className="news-caret" /></p>
+            <p className="news-say">{phaseLine(feed.work.phase)}<i className="news-caret" /></p>
           </article>
         ) : null}
         {feed.paused ? (
@@ -217,7 +213,6 @@ export default function NewsPage() {
                   <span className={tone(entry.score)}>score {showDec(entry.score, 2)}</span>
                 </header>
                 <p className="news-say">
-                  <b>{feed.symbol}. </b>
                   {summary}
                   {live && typed.length < (entry.summary || "").length ? <i className="news-caret" /> : null}
                 </p>
@@ -269,10 +264,10 @@ function phaseLabel(phase: string): string {
   return "SCRAPING";
 }
 
-function phaseLine(phase: string, symbol: string): string {
-  if (phase === "scoring") return `Asking the model whether this news affects ${symbol}.`;
-  if (phase === "reading") return `Reading pages for ${symbol}.`;
-  return `Scraping Google News, Bing, Yahoo, and the open web for ${symbol}.`;
+function phaseLine(phase: string): string {
+  if (phase === "scoring") return "Scoring the move that is still ahead of the tape.";
+  if (phase === "reading") return "Reading the pages behind these headlines.";
+  return "Scraping several news sites for this read.";
 }
 
 function tone(value: number): string {

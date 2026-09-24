@@ -14,7 +14,7 @@ export const TOURS: Record<string, CoachStep[]> = {
     { id: "und", title: "Pick the name", body: "Start here. This is the index or stock the desk is watching.", target: "und" },
     { id: "exp", title: "Pick the expiry", body: "F&O lives on a weekly clock. Use this week’s expiry unless you mean later.", target: "exp" },
     { id: "spot", title: "Spot, PCR, session", body: "Live spot plus put-call ratio and the session clock. Marks run until 15:30 IST close; the last 15 minutes are highlighted in the header.", target: "spot" },
-    { id: "votes", title: "Why the algo leans", body: "Each chip is one model. Green helps calls. Red helps puts.", target: "votes" },
+    { id: "votes", title: "Open P&L", body: "This is the live value of the paper buys you hold. It moves with each quote.", target: "votes" },
     { id: "chain", title: "Buy marks", body: "BUY marks every contract expected to pay after charges. Tap a strike for money flow — place the order on Zerodha yourself.", target: "chain" },
     { id: "pnl", title: "Net after costs", body: "This box is the edge after brokerage, STT and GST. If net is thin, skip.", target: "pnl" },
     { id: "chart", title: "VWAP and ORB", body: "Open the chart to see VWAP and the opening range the votes use.", target: "chart" },

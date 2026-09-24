@@ -427,16 +427,17 @@ export class AiService {
         model,
         schema: z.object({
           newsScore: z.number().min(-1).max(1),
-          summary: z.string().max(700),
+          summary: z.string().max(1600),
           notes: z.array(z.object({
             index: z.number().int().min(0).max(7),
             line: z.string().max(180),
           })).max(8),
         }),
-        system: `You write the news message for one Indian cash or index symbol this session.
-Use the desk line (local price, bias, band, recent closes) and the stories (titles, snippets, and page text). Ignore stories that cannot move this symbol.
-newsScore is the delta, from -1 (clear downside) to 1 (clear upside). 0 means the stories do not change the forecast.
-summary is the message a reader sees: two or three sentences. Say what in the news can move the symbol, whether that agrees with the local tape, and how strong the shift is. Do not list links. Do not place orders.
+        system: `You score the news delta for one Indian cash or index symbol for the rest of this session.
+The desk line is the price path already traded. Stories are the news. A move that is already visible in last or m5 is priced. Score only what is still ahead.
+Channels that move a price: company earnings and guidance move that stock; crude, rates, the rupee, and a broad risk shock move an index; one stock moves an index only by its weight times the part of its move that is not already in the tape. A bank falling 3% does not move the bank index by 3%.
+newsScore is that remaining move divided by 0.15% of spot, from -1 to 1. 0 means nothing material is left. The app turns the score into points at 0.15% of spot per 1.0, and never more than 0.4%.
+summary is the message, four to six sentences. Name the channel, say whether the tape already shows it, and say what remaining move the score stands for, in direction and rough size. Do not open with the symbol name. Do not list links. Do not place orders.
 notes may be empty.`,
         prompt: [
           input.symbol,
