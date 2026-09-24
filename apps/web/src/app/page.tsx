@@ -48,6 +48,7 @@ export default function OptionsPage() {
   const [flowMode, setFlowMode] = useState<"BUY" | "SELL">("BUY");
   const [studying, setStudying] = useState(false);
   const [stage, setStage] = useState<"chain" | "chart">("chain");
+  const [autopilot, setAutopilot] = useState(false);
   const [traceOpen, setTraceOpen] = useState(false);
   const [tracePhases, setTracePhases] = useState<StudyPhase[]>([]);
   const [tracePrompt, setTracePrompt] = useState<{ system: string; prompt: string } | null>(null);
@@ -65,11 +66,21 @@ export default function OptionsPage() {
         if (desk) {
           setSymbol(desk.symbol);
           setExchange(desk.exchange);
+          void api("/api/options/focus", {
+            method: "POST",
+            body: JSON.stringify({ exchange: desk.exchange, symbol: desk.symbol }),
+          }).catch(() => undefined);
           const next = "expiry" in desk ? desk.expiry : desk.nextExpiry;
           if (next) setExpiry(next);
         }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Could not load names"));
+  }, []);
+
+  useEffect(() => {
+    void api<{ settings?: { paperAutopilot?: boolean } }>("/api/bootstrap")
+      .then((data) => setAutopilot(Boolean(data.settings?.paperAutopilot)))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -329,6 +340,10 @@ export default function OptionsPage() {
         onNameChange={(next) => {
           setSymbol(next.symbol);
           setExchange(next.exchange);
+          void api("/api/options/focus", {
+            method: "POST",
+            body: JSON.stringify({ exchange: next.exchange, symbol: next.symbol }),
+          }).catch(() => undefined);
           setExpiries([]);
           setExpiry(next.nextExpiry ?? "");
           setBoard(null);
@@ -434,12 +449,29 @@ export default function OptionsPage() {
                   ))}
                 </div>
               ) : null}
+              <div className="stage-side">
               {stage === "chart" ? (
                 <span className="stage-legend">
                   <i className="lg-mkt" /> MKT {showDec(board?.lastPrice)}
                   <i className="lg-algo" /> {horizon?.label ?? "EOD"} {showDec(marks.find((line) => line.title !== "MKT")?.price)}
                 </span>
               ) : null}
+              <button
+                type="button"
+                className={`stage-tab ${autopilot ? "on" : ""}`}
+                title="Paper only, and only the symbol open on this page. Keeps running if you leave."
+                onClick={() => {
+                  const enabled = !autopilot;
+                  setAutopilot(enabled);
+                  void api("/api/settings/autopilot", {
+                    method: "POST",
+                    body: JSON.stringify({ enabled }),
+                  }).catch(() => setAutopilot(!enabled));
+                }}
+              >
+                {autopilot ? "AUTOPILOT ON" : "AUTOPILOT"}
+              </button>
+              </div>
             </div>
             {stage === "chart" ? (
               <div className="stage-chart">

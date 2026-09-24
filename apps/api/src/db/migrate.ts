@@ -498,5 +498,7 @@ export async function applySchema(client: SqlClient): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS news_tape_slot ON news_tape(exchange, symbol, slot_start);
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_options_exchange text;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_options_symbol text;
   `);
 }

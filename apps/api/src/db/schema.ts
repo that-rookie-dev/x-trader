@@ -150,6 +150,8 @@ export const appSettings = pgTable("app_settings", {
   liveTradingEnabled: boolean("live_trading_enabled").notNull().default(false),
   autonomousTradingEnabled: boolean("autonomous_trading_enabled").notNull().default(false),
   paperAutopilot: boolean("paper_autopilot").notNull().default(false),
+  activeOptionsExchange: text("active_options_exchange"),
+  activeOptionsSymbol: text("active_options_symbol"),
   predictionMode: text("prediction_mode").notNull().default("ALGO"),
   confirmedEgressIp: text("confirmed_egress_ip"),
   confirmedEgressAt: timestamp("confirmed_egress_at", { withTimezone: true }),

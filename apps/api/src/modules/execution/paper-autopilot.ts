@@ -1,11 +1,12 @@
 import type { Logger } from "../../config/logger.js";
 import type { Database } from "../../db/client.js";
+import { appSettings } from "../../db/schema.js";
 import type { PlainIdea } from "../forecast/desk.js";
 import { optionPnl } from "../forecast/charges.js";
 import { estimateOptionEod } from "../forecast/eod.js";
 import { horizonTarget } from "../forecast/horizons.js";
 import type { PaperExecutionAdapter } from "./paper-adapter.js";
-import { paperAutopilotEnabled, PaperTrainer, stockTrainQty } from "./paper-trainer.js";
+import { paperAutopilotEnabled, PaperTrainer } from "./paper-trainer.js";
 
 const MAX_OPEN = 3;
 /** Cut a long option once a quarter of the premium is gone. */
@@ -44,6 +45,8 @@ export function pickPaperBuy<T extends { edge?: string | null }>(buys: T[], comp
 }
 
 type BoardLike = {
+  symbol?: string;
+  exchange?: string;
   buys: Array<{
     contract: string;
     exchange: string;
@@ -91,6 +94,8 @@ type StocksLike = {
 
 /** Local Autopilot: BUY/SELL paper only from Algo+AI marks. Never touches Zerodha. */
 export class PaperAutopilot {
+  private lastBuyAt = 0;
+
   constructor(
     private readonly db: Database,
     private readonly paper: PaperExecutionAdapter,
@@ -98,7 +103,13 @@ export class PaperAutopilot {
     private readonly log: Logger,
   ) {}
 
-  async onOptionsBoard(board: BoardLike): Promise<void> {
+  async readFocus(): Promise<{ exchange: string; symbol: string } | null> {
+    const [row] = await this.db.select().from(appSettings).limit(1);
+    if (!row?.activeOptionsExchange || !row.activeOptionsSymbol) return null;
+    return { exchange: row.activeOptionsExchange, symbol: row.activeOptionsSymbol };
+  }
+
+  async onOptionsBoard(board: BoardLike, allowBuy = false): Promise<void> {
     if (!(await paperAutopilotEnabled(this.db))) return;
 
     const compare = board.compare?.tag ?? "";
@@ -106,6 +117,8 @@ export class PaperAutopilot {
 
     await this.sellOptionsNoLongerBuy(board, state.positions);
 
+    if (!allowBuy) return;
+    if (Date.now() - this.lastBuyAt < 3 * 60 * 1000) return;
     if (sessionPnl(state) <= -PAPER_DAY_STOP) return;
     if (state.positions.length >= MAX_OPEN) return;
 
@@ -161,6 +174,7 @@ export class PaperAutopilot {
           targetAt,
         },
       });
+      this.lastBuyAt = Date.now();
       this.log.info({ symbol: idea.contract, edge: idea.edge }, "paper autopilot BUY");
     } catch (err) {
       this.log.debug({ err, symbol: idea.contract }, "paper autopilot buy skipped");
@@ -185,37 +199,6 @@ export class PaperAutopilot {
       }
     }
 
-    if (state.positions.length >= MAX_OPEN) return;
-    const open = await this.paper.openSymbols();
-    const cash = String(state.account.cash);
-    for (const idea of desk.buys.slice(0, 2)) {
-      if (open.has(idea.contract.toUpperCase())) continue;
-      const px = idea.lastPrice ?? idea.premium;
-      if (!px) continue;
-      const qty = stockTrainQty(cash, px);
-      if (qty <= 0) continue;
-      try {
-        await this.trainer.open({
-          exchange: idea.exchange,
-          symbol: idea.contract,
-          quantity: qty,
-          lane: "CASH",
-          kind: idea.kind,
-          side: "BUY",
-          regime: "UNKNOWN",
-          source: "autopilot",
-          prediction: {
-            eodSpot: idea.target ?? null,
-            entrySpot: px,
-            why: idea.why,
-          },
-        });
-        this.log.info({ symbol: idea.contract, qty }, "paper autopilot BUY stock");
-        break;
-      } catch (err) {
-        this.log.debug({ err, symbol: idea.contract }, "paper autopilot stock buy skipped");
-      }
-    }
   }
 
   private async sellOptionsNoLongerBuy(

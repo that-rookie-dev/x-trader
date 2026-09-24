@@ -622,7 +622,13 @@ export function registerRoutes(app: Express, s: AppServices): void {
     asyncHandler(async (_req, res) => {
       const names = await s.market.listFnoUnderlyings();
       const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-      const desk = pickExpiringDesk(names, today);
+      const settings = await s.gate.snapshot();
+      const saved = names.find(
+        (item) =>
+          item.symbol.toUpperCase() === (settings.activeOptionsSymbol ?? "").toUpperCase() &&
+          item.exchange.toUpperCase() === (settings.activeOptionsExchange ?? "").toUpperCase(),
+      );
+      const desk = saved ?? pickExpiringDesk(names, today);
       res.json({
         names: names.map((item) => ({
           exchange: item.exchange,
@@ -636,6 +642,26 @@ export function registerRoutes(app: Express, s: AppServices): void {
           ? { exchange: desk.exchange, symbol: desk.symbol, expiry: desk.nextExpiry ?? null }
           : null,
       });
+    }),
+  );
+
+  app.post(
+    "/api/options/focus",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const body = z.object({ exchange: z.string().min(1), symbol: z.string().min(1) }).parse(req.body);
+      const names = await s.market.listFnoUnderlyings();
+      const match = names.find(
+        (item) =>
+          item.symbol.toUpperCase() === body.symbol.toUpperCase() &&
+          item.exchange.toUpperCase() === body.exchange.toUpperCase(),
+      );
+      if (!match) throw new AppError("UNKNOWN_SYMBOL", "That symbol is not on the options desk.", 422);
+      const settings = await s.gate.patch({
+        activeOptionsExchange: match.exchange,
+        activeOptionsSymbol: match.symbol,
+      });
+      res.json({ exchange: settings.activeOptionsExchange, symbol: settings.activeOptionsSymbol });
     }),
   );
 

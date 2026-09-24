@@ -36,6 +36,8 @@ export class LiveGate {
       haltReason: settings?.haltReason ?? null,
       activeAiProfileId: settings?.activeAiProfileId ?? null,
       paperAutopilot: settings?.paperAutopilot ?? false,
+      activeOptionsExchange: settings?.activeOptionsExchange ?? null,
+      activeOptionsSymbol: settings?.activeOptionsSymbol ?? null,
       predictionMode: asPredictionMode(settings?.predictionMode),
       paperCash,
       paperOpenCount,
@@ -63,6 +65,8 @@ export class LiveGate {
     activeAiProfileId: string | null;
     paperAutopilot: boolean;
     predictionMode: PredictionModeSetting;
+    activeOptionsExchange: string | null;
+    activeOptionsSymbol: string | null;
   }>) {
     await this.ensureRow();
     await this.db
@@ -73,6 +77,8 @@ export class LiveGate {
         ...(input.haltReason !== undefined ? { haltReason: input.haltReason } : {}),
         ...(input.activeAiProfileId !== undefined ? { activeAiProfileId: input.activeAiProfileId } : {}),
         ...(input.paperAutopilot != null ? { paperAutopilot: input.paperAutopilot } : {}),
+        ...(input.activeOptionsExchange !== undefined ? { activeOptionsExchange: input.activeOptionsExchange } : {}),
+        ...(input.activeOptionsSymbol !== undefined ? { activeOptionsSymbol: input.activeOptionsSymbol } : {}),
         ...(input.predictionMode ? { predictionMode: asPredictionMode(input.predictionMode) } : {}),
         // Force analysis-only flags in DB so legacy columns cannot re-enable ordering.
         executionMode: "PAPER",

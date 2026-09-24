@@ -125,6 +125,7 @@ export class AgentLoop {
     const remaining = Math.max(0, pool.length - this.scanDone);
     const batch = Math.min(SCAN_BATCH, remaining);
     this.training?.setTracked(pool.length, this.scanDone);
+    const focus = this.autopilot ? await this.autopilot.readFocus() : null;
     const deps = {
       db: this.db,
       market: this.market,
@@ -157,8 +158,8 @@ export class AgentLoop {
           ok: true,
           detail: `EOD ${board.eod?.close ?? "—"} · mode ${board.predictionMode ?? "ALGO"}`,
         });
-        if (this.autopilot) {
-          await this.autopilot.onOptionsBoard(board).catch((err) =>
+        if (this.autopilot && focus && desk.exchange.toUpperCase() === focus.exchange.toUpperCase() && desk.symbol.toUpperCase() === focus.symbol.toUpperCase()) {
+          await this.autopilot.onOptionsBoard(board, true).catch((err) =>
             this.log.debug({ err, symbol: desk.symbol }, "paper autopilot options failed"),
           );
         }

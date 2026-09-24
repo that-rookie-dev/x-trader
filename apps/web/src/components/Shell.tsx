@@ -162,19 +162,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     window.location.reload();
   }
 
-  async function toggleAutopilot() {
-    const enabled = !boot?.settings.paperAutopilot;
-    try {
-      const settings = await api<Bootstrap["settings"]>("/api/settings/autopilot", {
-        method: "POST",
-        body: JSON.stringify({ enabled }),
-      });
-      setBoot((prev) => (prev ? { ...prev, settings: { ...prev.settings, ...settings } } : prev));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "autopilot failed");
-    }
-  }
-
   async function setPredictionMode(mode: "ALGO" | "AI") {
     if (boot?.settings.predictionMode === mode) return;
     try {
@@ -336,14 +323,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
               AI
             </button>
           </div>
-          <button
-            type="button"
-            className={`btn ${boot?.settings.paperAutopilot ? "primary" : ""}`}
-            title="Paper Autopilot — local BUY/SELL only, never Zerodha"
-            onClick={() => void toggleAutopilot()}
-          >
-            {boot?.settings.paperAutopilot ? "Autopilot ON" : "Autopilot"}
-          </button>
           <button type="button" className="btn" title="Add ₹25,000 paper cash" onClick={() => void topupPaper()}>
             +₹25k
           </button>

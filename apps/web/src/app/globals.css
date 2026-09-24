@@ -1290,8 +1290,14 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   background: var(--accent);
 }
 .stage-tab:hover:not(.on) { color: var(--text); background: var(--bg-hover); }
-.stage-legend {
+.stage-side {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stage-legend {
+  margin-left: 0;
   display: flex;
   align-items: center;
   gap: 6px;
