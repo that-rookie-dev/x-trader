@@ -365,34 +365,103 @@
     }
     .section-head p { margin: 0; color: var(--muted); font-size: 17px; }
 
-    .feature-grid {
+    .desk-index { display: flex; flex-wrap: wrap; gap: 8px; margin: -12px 0 28px; }
+    .desk-index a {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font: 9px/1 var(--mono);
+      letter-spacing: .08em;
+    }
+    .desk-index a:hover { color: var(--lime); border-color: var(--line-strong); }
+    .desk-panel {
       display: grid;
-      grid-template-columns: repeat(12, 1fr);
-      border-top: 1px solid var(--line);
-      border-left: 1px solid var(--line);
-    }
-    .feature {
-      grid-column: span 4;
-      min-height: 268px;
-      padding: 29px;
-      border-right: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
+      grid-template-columns: 1.05fr .95fr;
+      gap: 36px;
+      align-items: center;
+      margin-bottom: 14px;
+      padding: 36px;
+      border: 1px solid var(--line);
       background: rgba(10, 14, 12, .55);
-      transition: background .2s ease;
+      scroll-margin-top: 88px;
     }
-    .feature:hover { background: rgba(16, 24, 19, .8); }
-    .feature.wide { grid-column: span 8; }
-    .feature-number {
+    .desk-panel.band { grid-template-columns: 1fr; }
+    .desk-kicker {
       display: flex;
       justify-content: space-between;
       color: var(--dim);
       font: 10px/1 var(--mono);
     }
-    .feature-number i { color: var(--lime); font-style: normal; }
-    .feature h3 { margin: 50px 0 12px; font-size: 22px; letter-spacing: -.03em; }
-    .feature p { margin: 0; color: var(--muted); font-size: 14px; }
-    .feature .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 22px; }
-    .tag { padding: 5px 7px; border: 1px solid var(--line); color: var(--dim); font: 8px/1 var(--mono); }
+    .desk-kicker i { color: var(--lime); font-style: normal; }
+    .desk-copy h3 { margin: 16px 0 12px; font-size: clamp(28px, 3vw, 40px); letter-spacing: -.045em; line-height: 1; }
+    .desk-copy p { margin: 0; color: var(--muted); font-size: 15px; }
+    .desk-copy .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 22px; }
+    .tag { padding: 6px 8px; border: 1px solid var(--line); color: var(--dim); font: 9px/1 var(--mono); }
+    .tag.on { color: #081007; background: var(--lime); border-color: var(--lime); }
+    .desk-visual {
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid var(--line-strong);
+      background:
+        radial-gradient(circle at 90% 0%, rgba(185, 255, 102, .1), transparent 12rem),
+        #070a08;
+    }
+    .mock-top, .mock-legend, .score-note, .acct, .model-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font: 10px/1.4 var(--mono);
+    }
+    .mock-legend { margin-top: 10px; }
+    .desk-visual svg { display: block; width: 100%; height: auto; margin-top: 12px; }
+    .scoreboard { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .scoreboard > div { padding: 18px; border: 1px solid var(--line); }
+    .scoreboard span, .pair span, .acct span, .off-grid span { display: block; color: var(--dim); font: 9px/1 var(--mono); letter-spacing: .12em; }
+    .scoreboard b { display: block; margin-top: 10px; font: 700 32px/1 var(--mono); }
+    .score-note { grid-column: 1 / -1; margin: 0; }
+    .off-grid { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); }
+    .off-grid div { padding: 22px; border-right: 1px solid var(--line); }
+    .off-grid div:last-child { border-right: 0; }
+    .off-grid b { display: block; margin: 10px 0 8px; font-size: 18px; letter-spacing: -.03em; }
+    .off-grid p { margin: 0; color: var(--muted); font-size: 13px; }
+    .mock-time { display: flex; flex-direction: column; gap: 14px; padding-left: 18px; border-left: 1px solid var(--line-strong); }
+    .node { position: relative; }
+    .node::before {
+      content: "";
+      position: absolute;
+      left: -23px;
+      top: 8px;
+      width: 9px;
+      height: 9px;
+      background: #070a08;
+      border: 2px solid var(--lime);
+    }
+    .node.next { color: var(--lime); font: 10px/1.4 var(--mono); }
+    .story {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 12px;
+      padding: 8px;
+      border: 1px solid var(--line);
+    }
+    .shot { width: 160px; height: 100px; background: linear-gradient(145deg, #1a2418, #0d1410 60%, #243024); }
+    .story small { color: var(--lime); font: 8px/1 var(--mono); letter-spacing: .12em; }
+    .story strong { display: block; margin: 6px 0; font-size: 13px; }
+    .story em { color: var(--muted); font-size: 12px; font-style: normal; }
+    .node.faded { opacity: .45; }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pair div, .acct { padding: 16px; border: 1px solid var(--line); }
+    .pair b { display: block; margin: 12px 0 8px; font: 700 26px/1 var(--mono); }
+    .pair small { color: var(--lime); font: 10px/1 var(--mono); }
+    .acct { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .acct b { display: block; margin-top: 8px; color: var(--ink); font: 700 16px/1 var(--mono); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chips span { padding: 8px 10px; border: 1px solid var(--line); font: 11px/1 var(--mono); }
+    .chips .gone { color: var(--dim); text-decoration: line-through; }
+    .model-row { flex-wrap: wrap; justify-content: flex-start; margin-bottom: 14px; }
+    .model-row span { padding: 8px 10px; border: 1px solid var(--line); }
+    .model-status { margin: 0; color: var(--lime); font: 11px/1.5 var(--mono); }
 
     .signal-map {
       margin-top: 35px;
@@ -601,9 +670,10 @@
       .nav-links { display: none; }
       .hero { grid-template-columns: 1fr; min-height: calc(100svh - 70px); gap: 0; padding: 45px 0; }
       .market-brief { display: none; }
-      .section-head, .learning-wrap, .install-grid, .faq { grid-template-columns: 1fr; }
-      .feature { grid-column: span 6; }
-      .feature.wide { grid-column: span 12; }
+      .section-head, .learning-wrap, .install-grid, .faq, .desk-panel, .off-grid, .story { grid-template-columns: 1fr; }
+      .shot { width: 100%; }
+      .off-grid div { border-right: 0; border-bottom: 1px solid var(--line); }
+      .off-grid div:last-child { border-bottom: 0; }
       .signal-map { grid-template-columns: repeat(3, 1fr); }
       .signal:nth-child(3) { border-right: 0; }
       .signal:nth-child(3)::after { display: none; }
@@ -618,8 +688,9 @@
       h1 { font-size: 55px; }
       section { padding: 82px 0; }
       .section-head { margin-bottom: 30px; }
-      .feature, .feature.wide { grid-column: span 12; min-height: 230px; }
-      .feature h3 { margin-top: 38px; }
+      .desk-panel { padding: 22px; }
+      .pair, .acct { grid-template-columns: 1fr; }
+      .off-grid div { border-right: 0; border-bottom: 1px solid var(--line); }
       .signal-map { grid-template-columns: repeat(2, 1fr); }
       .signal:nth-child(2n) { border-right: 0; }
       .signal:nth-child(2n)::after { display: none; }
@@ -744,50 +815,145 @@
           </p>
         </div>
 
-        <div class="feature-grid reveal">
-          <article class="feature wide">
-            <div class="feature-number"><span>01</span><i>LEADS THE DESK</i></div>
+        <nav class="desk-index reveal" aria-label="Desk sections">
+          <a href="#desk-horizon">HORIZON</a>
+          <a href="#desk-delta">DELTA</a>
+          <a href="#desk-off">MODEL OFF</a>
+          <a href="#desk-timeline">TIMELINE</a>
+          <a href="#desk-forecasts">FORECASTS</a>
+          <a href="#desk-broker">ZERODHA</a>
+          <a href="#desk-list">YOUR LIST</a>
+          <a href="#desk-model">YOUR MODEL</a>
+        </nav>
+
+        <article class="desk-panel reveal" id="desk-horizon">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>01</span><i>LEADS THE DESK</i></div>
             <h3>Pick how far ahead</h3>
             <p>Seven horizons run together: 5 minutes, 15, 30, 1 hour, 4 hours, 6 hours, and the cash close. Switch one, and the option chain follows it. The chart keeps only two lines — the live price, and that horizon’s prediction — and both move every second. A short horizon keeps an option’s time value. The close is the close.</p>
-            <div class="tags"><span class="tag">5M</span><span class="tag">15M</span><span class="tag">30M</span><span class="tag">1H</span><span class="tag">4H</span><span class="tag">6H</span><span class="tag">EOD</span></div>
-          </article>
-          <article class="feature">
-            <div class="feature-number"><span>02</span><i>SAME ON BOTH</i></div>
+            <div class="tags"><span class="tag">5M</span><span class="tag on">15M</span><span class="tag">30M</span><span class="tag">1H</span><span class="tag">4H</span><span class="tag">6H</span><span class="tag">EOD</span></div>
+          </div>
+          <div class="desk-visual" aria-hidden="true">
+            <div class="mock-top"><span>NIFTY 50</span><b class="lime">15M</b></div>
+            <svg viewBox="0 0 320 120" fill="none">
+              <path d="M0 78 C40 74 60 70 90 66 C130 60 150 72 190 58 C230 44 250 40 320 28" stroke="#f3f7f4" stroke-width="1.6"/>
+              <path d="M0 90 C50 86 80 80 120 76 C170 70 210 62 250 52 C280 46 300 42 320 36" stroke="#b9ff66" stroke-width="1.6"/>
+            </svg>
+            <div class="mock-legend"><span>MKT 24,612</span><b class="lime">BY 11:15 · 24,640</b></div>
+          </div>
+        </article>
+
+        <article class="desk-panel reveal" id="desk-delta">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>02</span><i>SAME ON BOTH</i></div>
             <h3>One news delta</h3>
             <p>Every fifteen minutes, the model asks whether the world can move each name you follow. The answer becomes points on the predicted close, added equally to the rule-based forecast and the AI forecast, on every horizon. When a story can move that name, the close moves with it. That is how the read improves accuracy. The horizon you picked does not resize the shift.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-number"><span>03</span><i>OPTIONAL</i></div>
+          </div>
+          <div class="desk-visual scoreboard" aria-hidden="true">
+            <div><span>DELTA</span><b class="lime">+18.2</b></div>
+            <div><span>SCORE</span><b>+0.42</b></div>
+            <p class="score-note">same points · both forecasts · every horizon</p>
+          </div>
+        </article>
+
+        <article class="desk-panel band reveal" id="desk-off">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>03</span><i>OPTIONAL</i></div>
             <h3>Off means unchanged</h3>
             <p>A connected model can tighten the call. With no model, or if the model drops out, the news pass pauses. Price, levels, and the rest keep their full weight, so their accuracy stays as it is. A missing delta does not stand in and pull the forecast down.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-number"><span>04</span><i>READ-ONLY</i></div>
+          </div>
+          <div class="off-grid" aria-hidden="true">
+            <div><span>01</span><b>Connected</b><p>The read can move the close when a story can move that name.</p></div>
+            <div><span>02</span><b>Model off</b><p>The whole news pass pauses. News says the delta is not active.</p></div>
+            <div><span>03</span><b>What stays</b><p>Price and levels keep their full weight. Their accuracy stays as it is.</p></div>
+          </div>
+        </article>
+
+        <article class="desk-panel reveal" id="desk-timeline">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>04</span><i>READ-ONLY</i></div>
             <h3>The news timeline</h3>
-            <p>Open News for one symbol from your watchlist. The latest read sits at the top, with a line between each pass. Every story shows its preview and a short line: whether it affected that symbol, and how. Delta and score sit above the thread. Nothing there places a trade. With no model connected, the page says the delta is not active.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-number"><span>05</span><i>ALGO / AI</i></div>
+            <p>Open News for one symbol from your watchlist. The latest read sits at the top, with a line between each pass. Every story shows its preview and a short line: whether it affected that symbol, and how. Delta and score sit above the thread. Nothing there places a trade.</p>
+          </div>
+          <div class="desk-visual" aria-hidden="true">
+            <div class="mock-time">
+              <div class="node next"><b>11:15:00</b> · next read in 04:12</div>
+              <div class="node">
+                <div class="story">
+                  <div class="shot"></div>
+                  <div>
+                    <small>SOURCE</small>
+                    <strong>World markets steady into the Indian open</strong>
+                    <em>NIFTY 50: does not move this session.</em>
+                  </div>
+                </div>
+              </div>
+              <div class="node faded">
+                <div class="story">
+                  <div>
+                    <small>10:45:00</small>
+                    <strong>Earlier read</strong>
+                    <em>Kept below the latest.</em>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="desk-panel reveal" id="desk-forecasts">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>05</span><i>ALGO / AI</i></div>
             <h3>Two forecast views</h3>
             <p>Compare the rule-based forecast with the AI-assisted view. They can disagree on the path. They always share the same news shift, or no news shift at all.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-number"><span>06</span><i>YOUR BROKER</i></div>
+          </div>
+          <div class="pair" aria-hidden="true">
+            <div><span>RULES</span><b>24,628</b><small>NEWS +18.2</small></div>
+            <div><span>AI</span><b>24,651</b><small>NEWS +18.2</small></div>
+          </div>
+        </article>
+
+        <article class="desk-panel reveal" id="desk-broker">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>06</span><i>YOUR BROKER</i></div>
             <h3>Your Zerodha picture</h3>
             <p>Funds, holdings, positions, and completed orders sit in the same view. Zerodha access stays read-only. Live orders remain yours.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-number"><span>07</span><i>YOUR LIST</i></div>
+          </div>
+          <div class="acct" aria-hidden="true">
+            <div><span>FUNDS</span><b>READ</b></div>
+            <div><span>HOLDINGS</span><b>READ</b></div>
+            <div><span>POSITIONS</span><b>READ</b></div>
+          </div>
+        </article>
+
+        <article class="desk-panel reveal" id="desk-list">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>07</span><i>YOUR LIST</i></div>
             <h3>Only the names you choose</h3>
             <p>Indices and F&amp;O stocks you add are the only names xTrader follows, scans, and learns from. Remove one from today, and its past history stays on your computer.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-number"><span>08</span><i>YOUR MODEL</i></div>
+          </div>
+          <div class="chips" aria-hidden="true">
+            <span>NIFTY 50</span>
+            <span>BANKNIFTY</span>
+            <span>SENSEX</span>
+            <span>RELIANCE</span>
+            <span class="gone">HDFCBANK</span>
+          </div>
+        </article>
+
+        <article class="desk-panel reveal" id="desk-model">
+          <div class="desk-copy">
+            <div class="desk-kicker"><span>08</span><i>YOUR MODEL</i></div>
             <h3>Connect a model to turn news on</h3>
             <p>OpenAI, Anthropic, Gemini, Groq, and others work, as do Ollama and LM Studio on your own computer. The forecast runs either way. The news delta waits until a model is active.</p>
-            <div class="tags"><span class="tag">PAID PROVIDERS</span><span class="tag">OLLAMA</span><span class="tag">LM STUDIO</span><span class="tag">FORECAST STILL RUNS</span></div>
-          </article>
-        </div>
+          </div>
+          <div class="desk-visual">
+            <div class="model-row" aria-hidden="true">
+              <span>OPENAI</span><span>ANTHROPIC</span><span>GEMINI</span><span>GROQ</span><span>OLLAMA</span><span>LM STUDIO</span>
+            </div>
+            <p class="model-status">Forecast runs either way. News waits for an active model.</p>
+          </div>
+        </article>
 
         <div class="signal-map reveal" aria-label="xTrader analysis flow">
           <div class="signal"><b>WATCH</b>your list</div>
