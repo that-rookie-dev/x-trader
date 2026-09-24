@@ -21,7 +21,7 @@ export interface ResearchPack {
   query: string;
   searchedAt: string;
   newsScore: number;
-  headlines: Array<{ title: string; url: string; snippet: string }>;
+  headlines: Array<{ title: string; url: string; snippet: string; note?: string }>;
   pages: ScrapedPage[];
   summary: string;
 }
@@ -63,10 +63,14 @@ export class ResearchService {
       for (const item of gathered) {
         const analysed =
           item.headlines.length === 0 && item.pages.length === 0
-            ? { ok: true as const, newsScore: 0, summary: "No headlines this slot." }
+            ? { ok: true as const, newsScore: 0, summary: "No headlines this slot.", notes: [] }
             : await this.ai.analyzeNews({ symbol: item.symbol, headlines: item.headlines, pages: item.pages });
         if (!analysed.ok) break;
         const points = newsPointsFromScore(analysed.newsScore, item.last);
+        const headlines = item.headlines.map((headline, index) => ({
+          ...headline,
+          note: analysed.notes.find((note) => note.index === index)?.line.trim() ?? "",
+        }));
         await this.writeDelta(item, analysed.newsScore, points, analysed.summary);
         await this.saveTape({
           exchange: item.exchange,
@@ -75,7 +79,7 @@ export class ResearchService {
           score: analysed.newsScore,
           points,
           summary: analysed.summary,
-          headlines: item.headlines,
+          headlines,
         });
         saved += 1;
       }
@@ -154,7 +158,7 @@ export class ResearchService {
       .where(and(eq(newsTape.exchange, exchange.toUpperCase()), eq(newsTape.symbol, symbol.toUpperCase())))
       .orderBy(desc(newsTape.slotStart))
       .limit(48);
-    return rows.reverse().map((row) => ({
+    return rows.map((row) => ({
       at: row.slotStart.toISOString(),
       score: Number(row.score),
       points: Number(row.points),

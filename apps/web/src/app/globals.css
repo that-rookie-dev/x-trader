@@ -1237,16 +1237,36 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 4px 2px 16px;
+  gap: 14px;
+  position: relative;
+  padding: 4px 2px 16px 28px;
+}
+.news-thread::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 18px;
+  bottom: 18px;
+  width: 1px;
+  background: var(--line-bright);
 }
 .news-bubble {
-  align-self: flex-start;
-  max-width: min(760px, 100%);
+  width: 100%;
+  position: relative;
   padding: 12px 14px;
   border: 1px solid var(--line);
   background: var(--bg-elev);
   animation: news-in 0.35s ease;
+}
+.news-bubble::before {
+  content: "";
+  position: absolute;
+  left: -24px;
+  top: 16px;
+  width: 9px;
+  height: 9px;
+  background: var(--bg);
+  border: 2px solid var(--accent);
 }
 .news-bubble.live { border-color: var(--line-bright); }
 .news-bubble.wait { background: transparent; color: var(--muted); }
@@ -1259,7 +1279,7 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 .news-cards { display: flex; flex-direction: column; gap: 8px; }
 .news-card {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 160px 1fr;
   gap: 12px;
   padding: 8px;
   border: 1px solid var(--line);
@@ -1268,7 +1288,19 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 }
 .news-card.solo { grid-template-columns: 1fr; }
 .news-card:hover { border-color: var(--line-bright); background: var(--bg-hover); }
-.news-card img { width: 112px; height: 74px; object-fit: cover; background: var(--bg-hover); }
+.news-card img {
+  width: 160px;
+  height: 100px;
+  min-width: 160px;
+  max-width: 160px;
+  min-height: 100px;
+  max-height: 100px;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  background: var(--bg-hover);
+}
+.news-card em { color: var(--text); font-style: normal; font-size: var(--fs-ui); }
 .news-card div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .news-card small { color: var(--accent); font: 600 var(--fs-kicker)/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
 .news-card strong { font-size: var(--fs-ui); font-weight: 600; }

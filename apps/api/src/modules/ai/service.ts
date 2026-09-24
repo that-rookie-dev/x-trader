@@ -414,7 +414,7 @@ export class AiService {
     symbol: string;
     headlines: Array<{ title: string; snippet?: string }>;
     pages: Array<{ title?: string; text: string }>;
-  }): Promise<{ ok: true; newsScore: number; summary: string } | { ok: false; summary: string }> {
+  }): Promise<{ ok: true; newsScore: number; summary: string; notes: Array<{ index: number; line: string }> } | { ok: false; summary: string }> {
     const active = await this.activeRow();
     if (!active?.modelId) {
       return { ok: false, summary: "No active AI model. News is not scored." };
@@ -427,10 +427,15 @@ export class AiService {
         schema: z.object({
           newsScore: z.number().min(-1).max(1),
           summary: z.string(),
+          notes: z.array(z.object({
+            index: z.number().int().min(0).max(7),
+            line: z.string().max(180),
+          })).max(8),
         }),
         system: `You judge whether current world and market news can move one Indian cash or index symbol during this session.
 Return newsScore from -1 (clear downside) to 1 (clear upside) and a one-sentence summary naming the item that matters.
 Ignore headlines that do not change this symbol. If nothing in the sources can move it, newsScore is 0.
+Also return notes: one entry per headline index you were given. Each line is at most 18 words. Say whether that headline affects the symbol this session, and if it does, how. If it does not, say it does not move the symbol.
 You never place orders.`,
         prompt: JSON.stringify({
           symbol: input.symbol,
@@ -446,7 +451,7 @@ You never place orders.`,
         provider: active.kind,
         model: active.modelId,
       });
-      return { ok: true, newsScore: object.newsScore, summary: object.summary };
+      return { ok: true, newsScore: object.newsScore, summary: object.summary, notes: object.notes };
     } catch (error) {
       const summary = error instanceof Error ? error.message : "AI news analysis failed.";
       await this.db.insert(agentDecisions).values({

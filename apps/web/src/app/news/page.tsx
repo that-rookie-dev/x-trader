@@ -5,7 +5,7 @@ import { showDec } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 
 type Name = { exchange: string; symbol: string };
-type Headline = { title: string; url: string; snippet: string };
+type Headline = { title: string; url: string; snippet: string; note?: string };
 type Entry = { at: string; score: number; points: number; summary: string; headlines: Headline[] };
 type Feed = {
   active?: boolean;
@@ -93,7 +93,7 @@ export default function NewsPage() {
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (el && stick.current) el.scrollTop = 0;
   }, [feed?.entries.length, feed?.symbol, typed]);
 
   const delta = feed?.delta;
@@ -155,9 +155,16 @@ export default function NewsPage() {
         ref={scrollRef}
         onScroll={(event) => {
           const el = event.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          stick.current = el.scrollTop < 80;
         }}
       >
+        <article className="news-bubble wait">
+          <header>
+            <time>{clock(new Date(nextAt).toISOString())}</time>
+            <span>NEXT READ</span>
+          </header>
+          <p>The next pass runs in {clockRemain(remain)}. Until then this delta stays as it is.</p>
+        </article>
         {feed.entries.length === 0 ? (
           <article className="news-bubble">
             <header>
@@ -183,7 +190,7 @@ export default function NewsPage() {
                 {entry.headlines.length > 0 ? (
                   <div className="news-cards">
                     {entry.headlines.map((item) => (
-                      <LinkCard key={item.url || item.title} item={item} />
+                      <LinkCard key={item.url || item.title} item={item} symbol={feed.symbol ?? ""} />
                     ))}
                   </div>
                 ) : null}
@@ -195,13 +202,6 @@ export default function NewsPage() {
             );
           })
         )}
-        <article className="news-bubble wait">
-          <header>
-            <time>{clock(new Date(nextAt).toISOString())}</time>
-            <span>NEXT READ</span>
-          </header>
-          <p>The next pass runs in {clockRemain(remain)}. Until then this delta stays as it is.</p>
-        </article>
       </div>
     </div>
   );
@@ -217,7 +217,7 @@ function Stat({ label, value, tone: toneName, tip }: { label: string; value: str
   );
 }
 
-function LinkCard({ item }: { item: Headline }) {
+function LinkCard({ item, symbol }: { item: Headline; symbol: string }) {
   const [card, setCard] = useState<Preview | null | undefined>(previews.get(item.url));
   const [imageOk, setImageOk] = useState(true);
 
@@ -256,6 +256,7 @@ function LinkCard({ item }: { item: Headline }) {
         <small>{site || "SOURCE"}</small>
         <strong>{title || "Untitled"}</strong>
         {description ? <span>{description}</span> : null}
+        {item.note ? <em>{symbol ? `${symbol}: ` : ""}{item.note}</em> : null}
       </div>
     </a>
   );
