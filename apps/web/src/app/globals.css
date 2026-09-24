@@ -1219,6 +1219,13 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 }
 .news-slot button:first-child { border-left: 0; }
 .news-slot button.on { color: var(--bg); background: var(--text); }
+.compare-bar { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.compare-note { margin: 0 0 10px; }
+.compare-key { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--muted); font: 600 var(--fs-kicker)/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.compare-key i { width: 14px; height: 3px; display: inline-block; }
+.compare-key i.mkt { background: #e8eef6; }
+.compare-key i.algo { background: #3dd68c; }
+.compare-key i.ai { background: #7aa2ff; }
 .news-next { margin-left: auto; }
 .news-next span, .news-stat span { color: var(--muted); font: 600 var(--fs-kicker)/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; }
 .news-next b, .news-stat b { font-size: 22px; letter-spacing: -0.04em; font-weight: 600; }

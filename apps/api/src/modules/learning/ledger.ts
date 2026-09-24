@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, lte } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
-import { predictionLedger } from "../../db/schema.js";
+import { horizonTape, predictionLedger } from "../../db/schema.js";
 import type { ForecastParams } from "./params.js";
 
 export type LedgerKind = "EOD_ALGO" | "EOD_AI" | "PAPER_BUY" | "PAPER_SELL";
@@ -404,5 +404,57 @@ export class PredictionLedger {
 
   sessionDateIst(now = new Date()): string {
     return now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  }
+
+  /** Write a minute of tick forecasts. Nothing in the batch is dropped. */
+  async appendPrints(
+    rows: Array<{
+      exchange: string;
+      symbol: string;
+      sessionDate: string;
+      sampledAt: Date;
+      spot: number;
+      algo: Record<string, number>;
+      ai: Record<string, number>;
+    }>,
+  ): Promise<void> {
+    const values = rows
+      .filter((row) => row.spot > 0)
+      .map((row) => ({
+        exchange: row.exchange.toUpperCase(),
+        symbol: row.symbol.toUpperCase(),
+        sessionDate: row.sessionDate,
+        sampledAt: row.sampledAt,
+        spot: String(row.spot),
+        algo: row.algo,
+        ai: row.ai,
+      }));
+    if (!values.length) return;
+    await this.db.insert(horizonTape).values(values);
+    const keep = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    await this.db.delete(horizonTape).where(lt(horizonTape.sampledAt, keep));
+  }
+
+  async readTape(input: { exchange: string; symbol: string; sessionDate: string; horizon: string }): Promise<
+    Array<{ at: string; spot: number; algo: number | null; ai: number | null }>
+  > {
+    const rows = await this.db
+      .select()
+      .from(horizonTape)
+      .where(
+        and(
+          eq(horizonTape.exchange, input.exchange.toUpperCase()),
+          eq(horizonTape.symbol, input.symbol.toUpperCase()),
+          eq(horizonTape.sessionDate, input.sessionDate),
+        ),
+      )
+      .orderBy(asc(horizonTape.sampledAt))
+      .limit(20000);
+    return rows.map((row) => ({
+      at: row.sampledAt.toISOString(),
+      spot: Number(row.spot),
+      algo: row.algo[input.horizon] ?? null,
+      ai: row.ai[input.horizon] ?? null,
+    }));
   }
 }

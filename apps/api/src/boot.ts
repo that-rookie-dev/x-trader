@@ -24,6 +24,7 @@ import { JournalService } from "./modules/journal/service.js";
 import { StrategyEngine } from "./modules/strategy/engine.js";
 import { ResearchService } from "./modules/research/service.js";
 import { ForecastEngine } from "./modules/forecast/engine.js";
+import { horizonTape } from "./modules/forecast/horizon-tape.js";
 import { AgentLoop } from "./modules/agent/loop.js";
 import { SignalStore } from "./modules/forecast/signals.js";
 import { PlayStore } from "./modules/forecast/plays.js";
@@ -148,7 +149,7 @@ export async function boot(env: Env) {
 
   const quoteLoop = setInterval(() => {
     void market.refreshQuotes().catch((err) => log.warn({ err }, "quote refresh failed"));
-  }, 3000);
+  }, 1000);
 
   const liveLoop = setInterval(() => {
     void forecasts.refreshWatchlist("live").catch((err) => log.warn({ err }, "live forecast refresh failed"));
@@ -199,10 +200,19 @@ export async function boot(env: Env) {
 
   const web = startWebServer(env, log);
 
+  market.on("tick", (tick: { exchange: string; symbol: string; lastPrice: string; receivedAt: string }) => {
+    const at = Date.parse(tick.receivedAt);
+    horizonTape.onTick(tick.exchange, tick.symbol, Number(tick.lastPrice), Number.isFinite(at) ? new Date(at) : new Date());
+  });
+  const tapeLoop = setInterval(() => {
+    void horizonTape.flush(ledger).catch((err) => log.warn({ err }, "horizon tape flush failed"));
+  }, 60_000);
   void market.connectStream().catch((err) => log.warn({ err }, "ticker start failed"));
 
   const shutdown = async () => {
     clearInterval(quoteLoop);
+    clearInterval(tapeLoop);
+    await horizonTape.flush(ledger).catch(() => undefined);
     clearInterval(liveLoop);
     clearInterval(studyLoop);
     clearInterval(newsLoop);

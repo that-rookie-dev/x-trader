@@ -1,9 +1,21 @@
 "use client";
 
+import { HorizonCompare, type ComparePoint } from "@/components/HorizonCompare";
 import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
 import { showDec, showRupee } from "@/lib/format";
 import { useEffect, useState } from "react";
+
+const HORIZONS = ["5m", "15m", "30m", "1h", "4h", "6h", "eod"] as const;
+
+type Compare = {
+  symbol: string | null;
+  exchange: string | null;
+  horizon: string;
+  sessionDate: string;
+  symbols: Array<{ exchange: string; symbol: string }>;
+  points: ComparePoint[];
+};
 
 type Memory = { id: string; strategy: string; regime: string; sampleCount: number; wins: number; losses: number; expectancy?: string | null };
 type Holding = { instrument: { symbol: string; exchange: string }; quantity: string; averagePrice: string; lastPrice?: string; pnl?: string };
@@ -69,6 +81,9 @@ type Desk = {
 export default function TradesPage() {
   const [desk, setDesk] = useState<Desk | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>("5m");
+  const [symbol, setSymbol] = useState("");
+  const [compare, setCompare] = useState<Compare | null>(null);
 
   async function load() {
     try {
@@ -85,6 +100,26 @@ export default function TradesPage() {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCompare() {
+      try {
+        const data = await api<Compare>(`/api/horizon/compare?symbol=${encodeURIComponent(symbol)}&horizon=${horizon}`);
+        if (cancelled) return;
+        setCompare(data);
+        if (data.symbol && data.symbol !== symbol) setSymbol(data.symbol);
+      } catch {
+        /* desk error already covers a dead API */
+      }
+    }
+    void loadCompare();
+    const id = window.setInterval(() => void loadCompare(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [symbol, horizon]);
+
   const memory = desk?.journal.memory ?? [];
   const paperMem = memory.filter((m) => m.id); // all memory; expectancy from paper+live
   const wins = paperMem.reduce((sum, row) => sum + row.wins, 0);
@@ -93,7 +128,6 @@ export default function TradesPage() {
   const paperClosed = desk?.paper?.closed ?? [];
   const marketClosed = Boolean(desk?.paper?.marketClosed);
   const learning = desk?.learning;
-  const formula = learning?.predictionMode === "AI" ? learning?.ai?.params : learning?.algo?.params;
   const branchMae =
     learning?.predictionMode === "AI" ? learning?.ai?.scoreMae : learning?.algo?.scoreMae;
 
@@ -160,52 +194,40 @@ export default function TradesPage() {
 
       <div className="card">
         <div className="section-head">
-          <h2>Prediction scorecard</h2>
-          <span className="muted">
-            {learning?.predictionMode ?? "ALGO"}
-            {learning?.symbol ? ` · ${learning.symbol}` : ""} · v{learning?.paramsVersion ?? "—"}
-            {formula
-              ? ` · w ${showDec(formula.wSession, 2)}/${showDec(formula.wMagnet, 2)}/${showDec(formula.wSpot, 2)}`
-              : ""}
-          </span>
+          <h2>Horizon compare</h2>
+          <span className="muted">{compare?.sessionDate ?? "today"} · every quote, saved each minute</span>
         </div>
-        {!learning?.recent?.length ? (
-          <p className="muted">Resolved EOD predictions will land here after the close bell.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Day</th>
-                <th>Sym</th>
-                <th>Kind</th>
-                <th>Pred</th>
-                <th>Actual</th>
-                <th>Err %</th>
-                <th>Dir</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...learning.recent]
-                .sort((a, b) => {
-                  const ar = a.status === "RESOLVED" && a.errorPct != null ? 0 : 1;
-                  const br = b.status === "RESOLVED" && b.errorPct != null ? 0 : 1;
-                  if (ar !== br) return ar - br;
-                  return b.sessionDate.localeCompare(a.sessionDate);
-                })
-                .map((row, i) => (
-                <tr key={`${row.sessionDate}-${row.symbol}-${row.kind}-${i}`}>
-                  <td className="mono">{row.sessionDate}</td>
-                  <td className="mono">{row.symbol}</td>
-                  <td className="muted">{row.kind.replace("EOD_", "")}</td>
-                  <td className="mono">{row.predictedClose != null ? showDec(row.predictedClose) : "—"}</td>
-                  <td className="mono">{row.actualClose != null ? showDec(row.actualClose) : "—"}</td>
-                  <td className="mono">{row.errorPct != null ? `${showDec(row.errorPct, 2)}%` : "—"}</td>
-                  <td className="muted">{row.directionHit == null ? "—" : row.directionHit ? "hit" : "miss"}</td>
-                </tr>
+        <div className="compare-bar">
+          <label className="news-pick">
+            <span>Symbol</span>
+            <select value={compare?.symbol ?? symbol} onChange={(event) => setSymbol(event.target.value)}>
+              {(compare?.symbols ?? []).map((item) => (
+                <option key={`${item.exchange}:${item.symbol}`} value={item.symbol}>
+                  {item.symbol}
+                </option>
               ))}
-            </tbody>
-          </table>
-        )}
+            </select>
+          </label>
+          <div className="news-slot">
+            <span>Horizon</span>
+            <div>
+              {HORIZONS.map((id) => (
+                <button key={id} type="button" className={id === horizon ? "on" : ""} onClick={() => setHorizon(id)}>
+                  {id === "eod" ? "EOD" : id}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="compare-key">
+            <i className="mkt" /> Market
+            <i className="algo" /> Algo
+            <i className="ai" /> AI
+          </div>
+        </div>
+        <p className="muted compare-note">
+          Market is the live price on each quote. Algo and AI are the horizon price named on that same quote. A minute of quotes is written together.
+        </p>
+        <HorizonCompare points={compare?.points ?? []} />
       </div>
 
       <div className="card">

@@ -7,6 +7,7 @@ import type { JournalService } from "../journal/service.js";
 import type { ForecastEngine } from "./engine.js";
 import { friendlyDate, loadHeldKeys, markContract, paperHeldSides, stanceLine, visibleIdeas } from "./desk.js";
 import { compareEod, eodTradeView, nearestStrike, predictEodSpot, viewAiStudy } from "./eod.js";
+import { horizonTape } from "./horizon-tape.js";
 import { buildHorizons, horizonTarget } from "./horizons.js";
 import { buyNetFloor, maxPain, putCallRatio, sessionClock, istMinutes, MARKET_CLOSE_MIN } from "./chain-tape.js";
 import type { EodFeatures } from "../learning/params.js";
@@ -530,6 +531,16 @@ export async function buildOptionsBoard(
         })
         .catch(() => undefined);
     }
+    const aiEod = Number(ai?.close ?? eodAiFormula.close);
+    horizonTape.remember({
+      exchange,
+      symbol,
+      vwap: features.vwap ?? null,
+      veto,
+      algo: { close: Number(eod.close), low: Number(eod.low), high: Number(eod.high) },
+      ai: { close: aiEod, low: Number(eodAiFormula.low), high: Number(eodAiFormula.high) },
+    });
+    horizonTape.onTick(exchange, symbol, liveSpot, new Date());
   }
 
   return {

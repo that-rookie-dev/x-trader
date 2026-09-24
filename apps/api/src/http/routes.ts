@@ -951,6 +951,37 @@ export function registerRoutes(app: Express, s: AppServices): void {
   );
 
   app.get(
+    "/api/horizon/compare",
+    authOptional,
+    asyncHandler(async (req, res) => {
+      const watch = await s.market.listWatchlist();
+      const names = watch.map((item) => ({ exchange: item.exchange, symbol: item.symbol }));
+      const settings = await s.gate.snapshot();
+      const asked = String(req.query.symbol ?? "");
+      const picked =
+        names.find((item) => item.symbol.toUpperCase() === asked.toUpperCase()) ??
+        names.find((item) => item.symbol.toUpperCase() === (settings.activeOptionsSymbol ?? "").toUpperCase()) ??
+        names[0] ??
+        null;
+      const horizon = ["5m", "15m", "30m", "1h", "4h", "6h", "eod"].includes(String(req.query.horizon ?? ""))
+        ? String(req.query.horizon)
+        : "5m";
+      const sessionDate = s.ledger.sessionDateIst();
+      const points = picked
+        ? await s.ledger.readTape({ exchange: picked.exchange, symbol: picked.symbol, sessionDate, horizon })
+        : [];
+      res.json({
+        symbol: picked?.symbol ?? null,
+        exchange: picked?.exchange ?? null,
+        horizon,
+        sessionDate,
+        symbols: names,
+        points,
+      });
+    }),
+  );
+
+  app.get(
     "/api/trades/desk",
     authOptional,
     asyncHandler(async (_req, res) => {

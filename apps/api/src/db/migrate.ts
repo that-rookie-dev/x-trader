@@ -501,5 +501,16 @@ export async function applySchema(client: SqlClient): Promise<void> {
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_options_exchange text;
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_options_symbol text;
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS news_slot_minutes integer NOT NULL DEFAULT 15;
+    CREATE TABLE IF NOT EXISTS horizon_tape (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      exchange text NOT NULL,
+      symbol text NOT NULL,
+      session_date text NOT NULL,
+      sampled_at timestamptz NOT NULL DEFAULT now(),
+      spot numeric(18,4) NOT NULL,
+      algo jsonb NOT NULL,
+      ai jsonb NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS horizon_tape_symbol_time ON horizon_tape(exchange, symbol, sampled_at);
   `);
 }

@@ -560,6 +560,21 @@ export const predictionLedger = pgTable(
   ],
 );
 
+export const horizonTape = pgTable(
+  "horizon_tape",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    exchange: text("exchange").notNull(),
+    symbol: text("symbol").notNull(),
+    sessionDate: text("session_date").notNull(),
+    sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull().defaultNow(),
+    spot: numeric("spot", { precision: 18, scale: 4 }).notNull(),
+    algo: jsonb("algo").$type<Record<string, number>>().notNull(),
+    ai: jsonb("ai").$type<Record<string, number>>().notNull(),
+  },
+  (t) => [index("horizon_tape_symbol_time").on(t.exchange, t.symbol, t.sampledAt)],
+);
+
 export const forecastParams = pgTable(
   "forecast_params",
   {

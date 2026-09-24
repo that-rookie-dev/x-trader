@@ -446,16 +446,68 @@ export function applyLiveQuotes(board: OptionsBoard, quotes: QuoteTick[]): Optio
   };
   const spot = map.get(`${board.exchange}:${board.symbol}`);
   const futureQ = board.future ? map.get(fnoKey(board.future.exchange, board.future.symbol)) : null;
+  const lastPrice = spot?.lastPrice ?? board.lastPrice;
   const priced: OptionsBoard = {
     ...board,
-    lastPrice: spot?.lastPrice ?? board.lastPrice,
+    lastPrice,
     change: spot?.change ?? board.change,
+    horizons: projectHorizons(board, Number(lastPrice)),
     future: board.future
       ? { ...board.future, lastPrice: futureQ?.lastPrice ?? board.future.lastPrice }
       : null,
     rows: board.rows.map((row) => ({ ...row, ce: patch(row.ce), pe: patch(row.pe) })),
   };
   return repriceBoard(priced);
+}
+
+const HORIZON_MINUTES: Record<string, number> = { "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "6h": 360 };
+
+/** Same horizon path the server uses, moved onto the latest quote. */
+function projectHorizons(board: OptionsBoard, last: number): OptionsBoard["horizons"] {
+  const rows = board.horizons;
+  const eod = board.eod;
+  if (!rows?.length || !eod || !(last > 0)) return rows;
+  const aiClose = Number(board.eodAi?.close ?? eod.close);
+  const algoClose = Number(eod.close);
+  const useAi = board.predictionMode === "AI" && Number.isFinite(aiClose) && aiClose > 0;
+  const eodClose = useAi ? aiClose : algoClose;
+  const eodLow = Number(useAi ? (board.eodAi?.low ?? eod.low) : eod.low);
+  const eodHigh = Number(useAi ? (board.eodAi?.high ?? eod.high) : eod.high);
+  const vwap = board.desk?.vwap != null ? Number(board.desk.vwap) : null;
+  const now = new Date();
+  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  const closeMin = 15 * 60 + 30;
+  const minutesToClose = Math.max(0, closeMin - minutes);
+  const sessionClose = Date.parse(
+    `${now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })}T15:30:00+05:30`,
+  );
+  return rows.map((row) => {
+    const mins = HORIZON_MINUTES[row.id];
+    const targetMs = row.id === "eod" || mins == null ? sessionClose : now.getTime() + mins * 60 * 1000;
+    const clamped = row.id !== "eod" && (targetMs >= sessionClose || minutes >= closeMin);
+    const at = clamped || row.id === "eod" ? sessionClose : targetMs;
+    const minutesToTarget = clamped || row.id === "eod" ? minutesToClose : Math.max(0, Math.round((at - now.getTime()) / 60000));
+    const span = Math.max(minutesToClose, 1);
+    const frac = Math.min(1, Math.max(0, minutesToTarget) / span);
+    const toward = last + (eodClose - last) * frac;
+    const anchor = vwap != null && vwap > 0 ? vwap : last;
+    const pull = Math.min(1, Math.max(0, minutesToTarget) / 30);
+    const tape = last + (anchor - last) * pull;
+    const close = row.id === "5m" || row.id === "15m" ? tape : row.id === "30m" ? (tape + toward) / 2 : toward;
+    const label =
+      row.id === "eod" || clamped
+        ? "EOD"
+        : `by ${new Date(at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}`;
+    return {
+      ...row,
+      label,
+      targetAt: new Date(at).toISOString(),
+      clamped,
+      close: close.toFixed(2),
+      anchor: last.toFixed(2),
+    };
+  });
 }
 
 export type LiveCandle = { time: number; open: number; high: number; low: number; close: number };
