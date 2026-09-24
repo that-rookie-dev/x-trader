@@ -13,71 +13,6 @@ function asBias(value: string | undefined): Bias {
   return value === "BULLISH" || value === "BEARISH" ? value : "RANGE";
 }
 
-function pickMagnet(input: {
-  last: number;
-  bias: Bias;
-  expectedLow: number;
-  expectedHigh: number;
-  magnet: number;
-  supports: number[];
-  resistances: number[];
-}): number {
-  const low = Math.min(input.expectedLow, input.last);
-  const high = Math.max(input.expectedHigh, input.last);
-  const pad = Math.max(high - low, input.last * 0.002) * 0.2;
-  const inBand = (n: number) => Number.isFinite(n) && n >= low - pad && n <= high + pad;
-  const supports = input.supports.filter(inBand);
-  const resistances = input.resistances.filter(inBand);
-  const nearest = (values: number[], from: number) =>
-    values.reduce((best, value) => (Math.abs(value - from) < Math.abs(best - from) ? value : best), values[0] ?? from);
-  if (input.bias === "BULLISH") {
-    const above = resistances.filter((n) => n >= input.last).sort((a, b) => a - b);
-    if (above[0] != null) return above[0];
-  }
-  if (input.bias === "BEARISH") {
-    const below = supports.filter((n) => n <= input.last).sort((a, b) => b - a);
-    if (below[0] != null) return below[0];
-  }
-  return nearest([input.magnet || input.last, ...supports, ...resistances], input.last);
-}
-
-function predictEod(input: {
-  last: number;
-  bias: Bias;
-  expectedLow: number;
-  expectedHigh: number;
-  magnet: number;
-  supports: number[];
-  resistances: number[];
-  pull?: number;
-}) {
-  const low = Math.min(input.expectedLow, input.last);
-  const high = Math.max(input.expectedHigh, input.last);
-  const span = Math.max(high - low, input.last * 0.002);
-  const pull =
-    input.pull != null && Number.isFinite(input.pull)
-      ? Math.min(0.82, Math.max(0.18, input.pull))
-      : input.bias === "BULLISH"
-        ? 0.68
-        : input.bias === "BEARISH"
-          ? 0.32
-          : 0.5;
-  const sessionTarget = low + span * pull;
-  const magnet = pickMagnet(input);
-  const close = sessionTarget * 0.45 + magnet * 0.35 + input.last * 0.2;
-  return { close: money(close), low: money(low), high: money(high), note: input.bias === "BULLISH" ? `Helper expects a close toward resistance ${money(magnet)}.` : input.bias === "BEARISH" ? `Helper expects a close toward support ${money(magnet)}.` : `Helper expects a close near magnet ${money(magnet)}.` };
-}
-
-function clampAi(input: { last: number; expectedLow: number; expectedHigh: number; closeHint: number; direction: Bias; pull?: number }) {
-  const low = Math.min(input.expectedLow, input.last);
-  const high = Math.max(input.expectedHigh, input.last);
-  const span = Math.max(high - low, input.last * 0.002);
-  const fromPull = input.pull != null ? low + span * Math.min(1, Math.max(0, input.pull)) : input.closeHint;
-  const raw = Number.isFinite(input.closeHint) ? input.closeHint : fromPull;
-  const close = Math.min(high + span * 0.15, Math.max(low - span * 0.15, raw));
-  return { close: money(close), low: money(low), high: money(high) };
-}
-
 function estimateOptionEod(input: { kind: "CE" | "PE"; strike: number; spot: number; eodSpot: number; premium: number | null; expiry: string | null }) {
   const intrinsicNow = input.kind === "CE" ? Math.max(input.spot - input.strike, 0) : Math.max(input.strike - input.spot, 0);
   const intrinsicEod = input.kind === "CE" ? Math.max(input.eodSpot - input.strike, 0) : Math.max(input.strike - input.eodSpot, 0);
@@ -113,38 +48,6 @@ function tradeDirection(spot: number, eodSpot: number): "PE" | "CE" | null {
   if (eodSpot <= spot - dead) return "PE";
   if (eodSpot >= spot + dead) return "CE";
   return null;
-}
-
-function compareEod(algoClose: number, aiClose: number, algoBias: Bias, aiBias: Bias) {
-  const mid = (Math.abs(algoClose) + Math.abs(aiClose)) / 2 || 1;
-  const delta = aiClose - algoClose;
-  const rel = Math.abs(delta) / mid;
-  const same = algoBias === aiBias;
-  const tag = same
-    ? rel <= 0.0015
-      ? "ALIGNED"
-      : rel <= 0.004
-        ? "LEAN"
-        : "STRETCH"
-    : rel <= 0.004
-      ? "MIXED"
-      : "OPPOSED";
-  const gapPct = (() => {
-    const [i, f = ""] = String(Math.abs(rel * 100)).split(".");
-    return `${i || "0"}.${f.slice(0, 2).padEnd(2, "0")}`;
-  })();
-  const gap = `${gapPct}% apart`;
-  const hint =
-    tag === "ALIGNED"
-      ? `same direction · ${gap}`
-      : tag === "LEAN"
-        ? `same direction · small gap · ${gap}`
-        : tag === "STRETCH"
-          ? `same direction · wider targets · ${gap}`
-          : tag === "MIXED"
-            ? `different direction · closes near · ${gap}`
-            : `different direction · ${gap}`;
-  return { agree: same || rel <= 0.0015, delta: money(delta), tag, hint };
 }
 
 function fnoKey(exchange: string | undefined, symbol: string) {
@@ -313,39 +216,21 @@ function rebuildBuys(board: OptionsBoard, eodClose: string): OptionsBoard["buys"
     }));
 }
 
+/** Keep the server index close. Quote ticks must not invent a second ALGO/AI formula. */
+function chainEodClose(board: OptionsBoard, last: number): { close: string; spot: number } {
+  const raw = board.predictionMode === "AI" ? (board.activeClose ?? board.ai?.close ?? board.eodAi?.close ?? board.eod?.close) : (board.activeClose ?? board.eod?.close);
+  const spot = Number(raw);
+  if (Number.isFinite(spot) && spot > 0) return { close: String(raw), spot };
+  return { close: money(last), spot: last };
+}
+
 function repriceBoard(board: OptionsBoard): OptionsBoard {
   const last = Number(board.lastPrice);
   if (!Number.isFinite(last) || last <= 0) return board;
   const bias = asBias(board.bias);
   const expectedLow = Number(board.session?.expectedLow ?? board.eod?.low ?? last);
   const expectedHigh = Number(board.session?.expectedHigh ?? board.eod?.high ?? last);
-  const magnet = Number(board.session?.magnet ?? board.levels?.magnet ?? last);
-  const supports = (board.levels?.supports ?? []).map(Number);
-  const resistances = (board.levels?.resistances ?? []).map(Number);
-  const eod = predictEod({
-    last,
-    bias,
-    expectedLow,
-    expectedHigh,
-    magnet,
-    supports,
-    resistances,
-    pull: board.session?.pull,
-  });
-  const eodSpot = Number(eod.close);
-  const ai = board.ai
-    ? {
-        ...board.ai,
-        ...clampAi({
-          last,
-          expectedLow,
-          expectedHigh,
-          closeHint: Number(board.ai.close),
-          direction: asBias(board.ai.direction),
-          pull: board.session?.pull,
-        }),
-      }
-    : board.ai;
+  const target = chainEodClose(board, last);
   const clock = sessionClock(new Date(), board.expiry);
   const gates = {
     cutoff: clock.cutoff,
@@ -354,18 +239,15 @@ function repriceBoard(board: OptionsBoard): OptionsBoard {
   };
   const rows = board.rows.map((row) => ({
     ...row,
-    ce: row.ce ? repriceLeg(row.ce, "CE", row.strike, last, eodSpot, board.expiry, gates) : null,
-    pe: row.pe ? repriceLeg(row.pe, "PE", row.strike, last, eodSpot, board.expiry, gates) : null,
+    ce: row.ce ? repriceLeg(row.ce, "CE", row.strike, last, target.spot, board.expiry, gates) : null,
+    pe: row.pe ? repriceLeg(row.pe, "PE", row.strike, last, target.spot, board.expiry, gates) : null,
   }));
   const next: OptionsBoard = {
     ...board,
-    eod: board.eod ? { ...board.eod, ...eod } : eod,
-    ai,
-    compare: ai ? compareEod(eodSpot, Number(ai.close), bias, asBias(ai.direction)) : board.compare,
     desk: board.desk ? { ...board.desk, clock: clock.label } : board.desk,
     rows,
   };
-  next.buys = rebuildBuys(next, eod.close);
+  next.buys = rebuildBuys(next, target.close);
   return next;
 }
 

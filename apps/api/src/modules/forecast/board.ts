@@ -160,11 +160,8 @@ export async function buildOptionsBoard(
   });
   const ai = viewAiStudy(forecast.evidence.aiStudy, sessionLive);
   const eod = eodAlgo;
-  const eodSpot = Number(eod.close);
-  const activeClose =
-    predictionMode === "AI"
-      ? Number(ai?.close ?? eodAiFormula.close)
-      : eodSpot;
+  const activeCloseLabel = predictionMode === "AI" ? (ai?.close ?? eodAiFormula.close) : eod.close;
+  const activeClose = Number(activeCloseLabel);
   const side = (
     leg: { tradingsymbol: string; lotSize: number; exchange: string } | null,
     kind: "CE" | "PE",
@@ -186,7 +183,7 @@ export async function buildOptionsBoard(
       kind,
       strike,
       spot: liveSpot,
-      eodSpot,
+      eodSpot: activeClose,
       premium,
       expiry: chain.expiry,
       lotSize: leg.lotSize || 1,
@@ -280,7 +277,7 @@ export async function buildOptionsBoard(
       label: item.kind,
       title: `Buy ${item.kind} ${item.strike}`,
       why: item.leg.why,
-      when: `Hold to EOD if spot stays near ${eod.close}.`,
+      when: `Hold to EOD if spot stays near ${activeCloseLabel}.`,
       premium: item.leg.lastPrice,
       instrumentType: "OPTION" as const,
       canPaper: item.leg.canPaper,
@@ -328,14 +325,14 @@ export async function buildOptionsBoard(
       expiry: chain.expiry,
       entryZone: item.leg.lastPrice ?? "market",
       stop: money(liveSpot * (item.kind === "CE" ? 0.992 : 1.008), 2),
-      targets: [eod.close],
+      targets: [activeCloseLabel],
       holdUntil: holdUntilAt(chain.expiry ? "expiry" : "session", chain.expiry),
       invalidation: forecast.session.invalidation,
       edgeAfterCost: item.leg.pnl?.net ?? null,
       confidence: forecast.confidence,
       regime: forecast.regime,
       why: [item.leg.why, ...volLines, expectancy?.note ?? "", trail ?? ""].filter(Boolean),
-      eodSpot: eod.close,
+      eodSpot: activeCloseLabel,
       eodPremium: item.leg.eodPremium ?? null,
       pcr,
       ivRank: vol.ivRank,
