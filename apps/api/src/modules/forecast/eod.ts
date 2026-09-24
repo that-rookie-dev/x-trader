@@ -318,14 +318,17 @@ export function estimateOptionEod(input: {
   const remain = expiryToday ? params.optionRemainExpiry : params.optionRemainLater;
   const flat = Math.max(intrinsicEod + timeValue * remain, 0.05);
   const useFuture = input.futurePx != null && input.futurePx > 0 && input.spot > 0;
-  const undNow = useFuture ? input.futurePx! : input.spot;
   const basis = useFuture ? input.futurePx! / input.spot : 1;
-  const rate = useFuture ? 0 : 0.065;
+  // Use the future only to imply IV, and only when it is the same expiry and within a few days of carry.
+  // Never rescale the cash close. That made calls settle hundreds of points away from puts.
+  const aligned = useFuture && !expiryToday && basis > 0.997 && basis < 1.003;
+  const undNow = aligned ? input.futurePx! : input.spot;
+  const rate = aligned ? 0 : 0.065;
   const tNow = yearsUntil(input.expiry, now);
   const eodAt = new Date(`${today}T15:30:00+05:30`);
   const tEod = yearsUntil(input.expiry, eodAt);
   const iv = tNow > 1 / 24 / 365 ? blackScholesIv(premium, undNow, input.strike, tNow, input.kind, rate) : null;
-  const modelled = iv != null ? blackScholesPrice(input.eodSpot * basis, input.strike, tEod, iv, input.kind, rate) : flat;
+  const modelled = iv != null ? blackScholesPrice(input.eodSpot, input.strike, tEod, iv, input.kind, rate) : flat;
   const priced = Number.isFinite(modelled) ? modelled : flat;
   const eodPremium = Math.max(priced, expiryToday ? intrinsicEod : 0, 0.05);
   const dist = Math.abs(input.eodSpot - input.strike);

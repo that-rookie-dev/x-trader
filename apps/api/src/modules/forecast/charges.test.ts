@@ -65,6 +65,20 @@ describe("EOD option estimate", () => {
     expect(Number(est.eodPremium)).toBeGreaterThan(9);
     expect(est.moneyness).toBe("ITM");
   });
+
+  it("settles calls and puts to the same cash close when the future is far from spot", () => {
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const now = new Date(`${today}T09:07:00+05:30`);
+    const shared = { spot: 74418, eodSpot: 74402.64, expiry: today, now, futurePx: 74833 };
+    const call = estimateOptionEod({ ...shared, kind: "CE", strike: 73800, premium: 1052 });
+    const put = estimateOptionEod({ ...shared, kind: "PE", strike: 74500, premium: 82 });
+    expect(Number(call.eodPremium)).toBeCloseTo(74402.64 - 73800, 0);
+    expect(Number(put.eodPremium)).toBeCloseTo(74500 - 74402.64, 0);
+    const later = new Date(now.getTime() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const withBasis = estimateOptionEod({ ...shared, kind: "CE", strike: 74500, premium: 400, expiry: later, futurePx: 75200 });
+    const cashOnly = estimateOptionEod({ ...shared, kind: "CE", strike: 74500, premium: 400, expiry: later, futurePx: null });
+    expect(Math.abs(Number(withBasis.eodPremium) - Number(cashOnly.eodPremium))).toBeLessThan(5);
+  });
 });
 
 const OPEN = new Date("2026-06-15T04:30:00.000Z");

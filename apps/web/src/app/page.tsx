@@ -22,8 +22,8 @@ function premiumErrPct(ltp: string | null | undefined, eod: string | null | unde
   if (ltp == null || eod == null) return null;
   const pred = Number(eod);
   const act = Number(ltp);
-  if (!(Number.isFinite(pred) && Number.isFinite(act)) || !(Math.abs(pred) > 0)) return null;
-  return ((act - pred) / pred) * 100;
+  if (!(Number.isFinite(pred) && Number.isFinite(act)) || !(Math.abs(act) > 0)) return null;
+  return ((act - pred) / act) * 100;
 }
 
 type Name = DeskName;

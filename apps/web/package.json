@@ -1,6 +1,6 @@
 {
   "name": "@xtrader/web",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "scripts": {
     "dev": "NODE_ENV=production next start -H 127.0.0.1 -p 3456",
