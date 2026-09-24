@@ -152,6 +152,7 @@ export const appSettings = pgTable("app_settings", {
   paperAutopilot: boolean("paper_autopilot").notNull().default(false),
   activeOptionsExchange: text("active_options_exchange"),
   activeOptionsSymbol: text("active_options_symbol"),
+  newsSlotMinutes: integer("news_slot_minutes").notNull().default(15),
   predictionMode: text("prediction_mode").notNull().default("ALGO"),
   confirmedEgressIp: text("confirmed_egress_ip"),
   confirmedEgressAt: timestamp("confirmed_egress_at", { withTimezone: true }),

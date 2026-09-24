@@ -15,11 +15,12 @@ type Feed = {
   delta: { score: number; points: number; summary: string; updatedAt: string } | null;
   entries: Entry[];
   work?: { running: boolean; phase: "idle" | "scraping" | "reading" | "scoring"; symbol: string };
+  slotMinutes?: number;
 };
 type Preview = { url: string; site: string; title: string; description: string; image: string };
 
 const MEMORY = "xtrader-news-symbol";
-const SLOT_MS = 15 * 60 * 1000;
+const SLOTS = [15, 30, 60] as const;
 const previews = new Map<string, Preview | null>();
 
 const DELTA_TIP =
@@ -100,14 +101,31 @@ export default function NewsPage() {
   const delta = feed?.delta;
   const points = delta?.points ?? 0;
   const score = delta?.score ?? 0;
-  const nextAt = Math.ceil(now / SLOT_MS) * SLOT_MS;
+  const slotMinutes = SLOTS.includes(feed?.slotMinutes as 15 | 30 | 60) ? (feed?.slotMinutes as 15 | 30 | 60) : 15;
+  const slotMs = slotMinutes * 60 * 1000;
+  const nextAt = Math.ceil(now / slotMs) * slotMs;
   const remain = Math.max(0, nextAt - now);
+
+  async function setIntervalMinutes(minutes: 15 | 30 | 60) {
+    const saved = await api<{ slotMinutes: number }>("/api/news/interval", {
+      method: "POST",
+      body: JSON.stringify({ minutes }),
+    });
+    setFeed((current) => (current ? { ...current, slotMinutes: saved.slotMinutes } : current));
+  }
 
   if (!feed) return <div className="news-page" />;
 
   if (feed.active === false) {
     return (
       <div className="news-page">
+        <div className="news-bar">
+          <div>
+            <p className="eyebrow">NEWS</p>
+            <h1>Read</h1>
+          </div>
+          <SlotPick minutes={slotMinutes} onPick={(minutes) => void setIntervalMinutes(minutes)} />
+        </div>
         <div className="news-thread">
           <article className="news-bubble">
             <p className="news-off">Not active. Connect an active LLM model to enable this delta.</p>
@@ -143,6 +161,7 @@ export default function NewsPage() {
             ))}
           </select>
         </label>
+        <SlotPick minutes={slotMinutes} onPick={(minutes) => void setIntervalMinutes(minutes)} />
         <div className="news-next">
           <span>Next read</span>
           <b className="mono">{clockRemain(remain)}</b>
@@ -310,6 +329,21 @@ function clock(iso: string): string {
     second: "2-digit",
     hourCycle: "h23",
   }).format(new Date(iso));
+}
+
+function SlotPick({ minutes, onPick }: { minutes: 15 | 30 | 60; onPick: (minutes: 15 | 30 | 60) => void }) {
+  return (
+    <div className="news-slot">
+      <span>Read every</span>
+      <div>
+        {SLOTS.map((slot) => (
+          <button key={slot} type="button" className={slot === minutes ? "on" : ""} onClick={() => onPick(slot)}>
+            {slot === 60 ? "1h" : `${slot}m`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function clockRemain(ms: number): string {

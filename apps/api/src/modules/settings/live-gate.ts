@@ -38,6 +38,7 @@ export class LiveGate {
       paperAutopilot: settings?.paperAutopilot ?? false,
       activeOptionsExchange: settings?.activeOptionsExchange ?? null,
       activeOptionsSymbol: settings?.activeOptionsSymbol ?? null,
+      newsSlotMinutes: settings?.newsSlotMinutes === 30 || settings?.newsSlotMinutes === 60 ? settings.newsSlotMinutes : 15,
       predictionMode: asPredictionMode(settings?.predictionMode),
       paperCash,
       paperOpenCount,
@@ -67,6 +68,7 @@ export class LiveGate {
     predictionMode: PredictionModeSetting;
     activeOptionsExchange: string | null;
     activeOptionsSymbol: string | null;
+    newsSlotMinutes: number;
   }>) {
     await this.ensureRow();
     await this.db
@@ -79,6 +81,7 @@ export class LiveGate {
         ...(input.paperAutopilot != null ? { paperAutopilot: input.paperAutopilot } : {}),
         ...(input.activeOptionsExchange !== undefined ? { activeOptionsExchange: input.activeOptionsExchange } : {}),
         ...(input.activeOptionsSymbol !== undefined ? { activeOptionsSymbol: input.activeOptionsSymbol } : {}),
+        ...(input.newsSlotMinutes != null ? { newsSlotMinutes: input.newsSlotMinutes === 30 || input.newsSlotMinutes === 60 ? input.newsSlotMinutes : 15 } : {}),
         ...(input.predictionMode ? { predictionMode: asPredictionMode(input.predictionMode) } : {}),
         // Force analysis-only flags in DB so legacy columns cannot re-enable ordering.
         executionMode: "PAPER",

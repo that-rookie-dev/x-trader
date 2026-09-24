@@ -1,12 +1,15 @@
 import { and, desc, eq, lt } from "drizzle-orm";
 import type { Database } from "../../db/client.js";
-import { newsDeltas, newsTape, researchSnapshots } from "../../db/schema.js";
+import { appSettings, newsDeltas, newsTape, researchSnapshots } from "../../db/schema.js";
 import type { AiService } from "../ai/service.js";
 import { duckDuckGoSearch, type SearchResult } from "./duckduckgo.js";
 import { fetchNewsRss } from "./news.js";
 import { scrapePage, type ScrapedPage } from "./scrape.js";
 
-const NEWS_SLOT_MS = 15 * 60 * 1000;
+export function newsSlotMs(minutes: number): number {
+  const slot = minutes === 30 || minutes === 60 ? minutes : 15;
+  return slot * 60 * 1000;
+}
 
 /** Same shift for Algo and AI: a full score moves the close by 0.15% of spot, capped at 0.4%. */
 export function newsPointsFromScore(score: number, last: number): number {
@@ -52,7 +55,8 @@ export class ResearchService {
   async runBackground(items: WatchItem[]): Promise<number> {
     if (this.running || items.length === 0) return 0;
     if (!(await this.ai.modelReady())) return 0;
-    const slotStart = Math.floor(Date.now() / NEWS_SLOT_MS) * NEWS_SLOT_MS;
+    const slotMs = await this.slotMs();
+    const slotStart = Math.floor(Date.now() / slotMs) * slotMs;
     const due = await this.dueItems(items, slotStart);
     if (due.length === 0) return 0;
     this.running = true;
@@ -215,7 +219,7 @@ export class ResearchService {
           headlines: input.headlines.slice(0, 8),
         },
       });
-    const keep = new Date(input.slotStart.getTime() - 48 * NEWS_SLOT_MS);
+    const keep = new Date(input.slotStart.getTime() - 48 * (await this.slotMs()));
     await this.db.delete(newsTape).where(and(eq(newsTape.exchange, exchange), eq(newsTape.symbol, symbol), lt(newsTape.slotStart, keep)));
   }
 
@@ -308,6 +312,11 @@ export class ResearchService {
     await Promise.all(workers);
   }
 
+  private async slotMs(): Promise<number> {
+    const [row] = await this.db.select().from(appSettings).limit(1);
+    return newsSlotMs(row?.newsSlotMinutes ?? 15);
+  }
+
   private async readCache(query: string): Promise<ResearchPack | null> {
     const [row] = await this.db
       .select()
@@ -316,7 +325,7 @@ export class ResearchService {
       .orderBy(desc(researchSnapshots.createdAt))
       .limit(1);
     if (!row) return null;
-    if (Date.now() - row.createdAt.getTime() > NEWS_SLOT_MS) return null;
+    if (Date.now() - row.createdAt.getTime() > (await this.slotMs())) return null;
     return row.payload as unknown as ResearchPack;
   }
 

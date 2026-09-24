@@ -500,5 +500,6 @@ export async function applySchema(client: SqlClient): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS news_tape_slot ON news_tape(exchange, symbol, slot_start);
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_options_exchange text;
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS active_options_symbol text;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS news_slot_minutes integer NOT NULL DEFAULT 15;
   `);
 }

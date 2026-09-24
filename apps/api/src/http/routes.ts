@@ -15,6 +15,7 @@ import { pickExpiringDesk } from "../modules/forecast/levels.js";
 import { buildOptionsBoard } from "../modules/forecast/board.js";
 import { marketBlocksPaper } from "../modules/forecast/chain-tape.js";
 import { fetchPreviewImage, linkPreview } from "../modules/research/opengraph.js";
+import { newsSlotMs } from "../modules/research/service.js";
 
 export function registerRoutes(app: Express, s: AppServices): void {
   app.get("/api/health", (_req, res) => {
@@ -1032,8 +1033,10 @@ export function registerRoutes(app: Express, s: AppServices): void {
     s.sessions.middleware("optional"),
     asyncHandler(async (req, res) => {
       const active = await s.ai.modelReady();
+      const settings = await s.gate.snapshot();
+      const slotMinutes = settings.newsSlotMinutes;
       if (!active) {
-        res.json({ active: false, symbols: [], symbol: null, exchange: null, delta: null, entries: [] });
+        res.json({ active: false, symbols: [], symbol: null, exchange: null, delta: null, entries: [], slotMinutes });
         return;
       }
       const watch = await s.market.listWatchlist();
@@ -1041,12 +1044,12 @@ export function registerRoutes(app: Express, s: AppServices): void {
       const asked = String(req.query.symbol ?? "");
       const picked = names.find((item) => item.symbol.toUpperCase() === asked.toUpperCase()) ?? names[0] ?? null;
       if (!picked) {
-        res.json({ active: true, symbols: [], symbol: null, exchange: null, delta: null, entries: [] });
+        res.json({ active: true, symbols: [], symbol: null, exchange: null, delta: null, entries: [], slotMinutes });
         return;
       }
       const delta = await s.research.read(picked.exchange, picked.symbol);
       const entries = await s.research.tape(picked.exchange, picked.symbol);
-      const slotMs = 15 * 60 * 1000;
+      const slotMs = newsSlotMs(slotMinutes);
       const nextAt = Math.floor(Date.now() / slotMs) * slotMs + slotMs;
       res.json({
         active: true,
@@ -1056,8 +1059,20 @@ export function registerRoutes(app: Express, s: AppServices): void {
         delta,
         entries,
         nextAt,
+        slotMinutes,
         work: s.research.workStatus(),
       });
+    }),
+  );
+
+  app.post(
+    "/api/news/interval",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const minutes = Number(req.body?.minutes);
+      const newsSlotMinutes = minutes === 30 || minutes === 60 ? minutes : 15;
+      await s.gate.patch({ newsSlotMinutes });
+      res.json({ slotMinutes: newsSlotMinutes });
     }),
   );
 
