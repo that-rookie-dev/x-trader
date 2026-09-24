@@ -660,7 +660,7 @@
         <h1>See the market.<span>Make your call.</span></h1>
         <p>
           xTrader watches the stocks and indices you choose, from the next five minutes through the cash close.
-          When a model is connected, one news read shifts both forecasts the same way. With no model, that read stays off and the forecast carries on. You still make the call. xTrader never places a live trade.
+          When a model is connected, a news delta can move both forecasts closer to the session. With no model, that read stays off and the other inputs keep their accuracy. You still make the call. xTrader never places a live trade.
         </p>
         <div class="hero-actions">
           <a class="btn primary" href="#install">Install xTrader <span>↓</span></a>
@@ -696,7 +696,7 @@
           </div>
           <div class="journey-step">
             <b>04</b>
-            <div><strong>Share one news read</strong><span>The same delta on both forecasts, every fifteen minutes, or none at all.</span></div>
+            <div><strong>Read the latest first</strong><span>A timeline of stories, one delta, the same shift on both forecasts.</span></div>
           </div>
           <div class="journey-step test">
             <b>05</b>
@@ -739,7 +739,7 @@
             <h2>Know what matters before you act.</h2>
           </div>
           <p>
-            The horizon you pick leads the desk. The news read comes next, and only when a model is connected.
+            The horizon you pick leads the desk. News comes next: the latest read on top, and one delta that can tighten both forecasts when a model is connected.
             Everything else — your list, your broker picture, the daily review — stays in the same calm workspace.
           </p>
         </div>
@@ -754,17 +754,17 @@
           <article class="feature">
             <div class="feature-number"><span>02</span><i>SAME ON BOTH</i></div>
             <h3>One news delta</h3>
-            <p>Every fifteen minutes, one background read looks at whether the world can move each name you follow. That single shift is added equally to the rule-based forecast and the AI forecast. The horizon you picked does not resize it.</p>
+            <p>Every fifteen minutes, the model asks whether the world can move each name you follow. The answer becomes points on the predicted close, added equally to the rule-based forecast and the AI forecast, on every horizon. When a story can move that name, the close moves with it. That is how the read improves accuracy. The horizon you picked does not resize the shift.</p>
           </article>
           <article class="feature">
             <div class="feature-number"><span>03</span><i>OPTIONAL</i></div>
             <h3>Off means unchanged</h3>
-            <p>A connected model can tighten the call. With no model, or if the model drops out, the whole news pass pauses. Price, levels, and the rest keep their weight. A missing news delta does not pull the forecast down.</p>
+            <p>A connected model can tighten the call. With no model, or if the model drops out, the news pass pauses. Price, levels, and the rest keep their full weight, so their accuracy stays as it is. A missing delta does not stand in and pull the forecast down.</p>
           </article>
           <article class="feature">
             <div class="feature-number"><span>04</span><i>READ-ONLY</i></div>
-            <h3>The news tape</h3>
-            <p>Open News to scroll the headlines and the model’s summary for one symbol from your watchlist. Nothing there places a trade. With no model connected, the page says the delta is not active.</p>
+            <h3>The news timeline</h3>
+            <p>Open News for one symbol from your watchlist. The latest read sits at the top, with a line between each pass. Every story shows its preview and a short line: whether it affected that symbol, and how. Delta and score sit above the thread. Nothing there places a trade. With no model connected, the page says the delta is not active.</p>
           </article>
           <article class="feature">
             <div class="feature-number"><span>05</span><i>ALGO / AI</i></div>
@@ -929,7 +929,11 @@
           </details>
           <details>
             <summary>What happens to forecasts if I have no AI model?</summary>
-            <p>They keep running on the other inputs. The news pass stays paused, and News shows that the delta is not active. Connect a model when you want that fifteen-minute read. A missing news delta does not change the accuracy of the rest.</p>
+            <p>They keep running on price, levels, and the other inputs, at the same strength. The news pass stays paused, and News shows that the delta is not active. Connect a model when you want that fifteen-minute read. A missing delta leaves the accuracy of those other inputs unchanged.</p>
+          </details>
+          <details>
+            <summary>How does the news delta change a prediction?</summary>
+            <p>It adds the same points to the Algo close and the AI close, on every horizon. A positive delta lifts the predicted price. A negative delta pulls it down. When the read finds news that can move that symbol, the forecast moves with it, which is how accuracy improves. Hover the delta or the score on the News page to see the same explanation. Each story also carries a short line on whether it affected the symbol, and how.</p>
           </details>
           <details>
             <summary>Can I choose which AI model to use?</summary>
