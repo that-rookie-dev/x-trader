@@ -6,7 +6,7 @@ describe("option charges", () => {
   it("charges STT only on the sell leg and GST on brokerage plus exchange", () => {
     const trip = optionRoundTrip({ buyPremium: 100, sellPremium: 140, qty: 75 });
     expect(Number(trip.buy.stt)).toBe(0);
-    expect(Number(trip.sell.stt)).toBeGreaterThan(0);
+    expect(Number(trip.sell.stt)).toBeCloseTo(140 * 75 * 0.0015, 1);
     expect(Number(trip.buy.stamp)).toBeGreaterThan(0);
     expect(Number(trip.sell.stamp)).toBe(0);
     expect(Number(trip.total)).toBeGreaterThan(Number(trip.buy.total));
@@ -77,7 +77,7 @@ describe("profitable option buys", () => {
       spot: 1000,
       eodSpot: 970,
       premium: 12,
-      expiry: "2099-01-01",
+      expiry: "2026-06-18",
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
@@ -94,7 +94,7 @@ describe("profitable option buys", () => {
       spot: 1000,
       eodSpot: 970,
       premium: 132,
-      expiry: "2099-01-01",
+      expiry: "2026-06-18",
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
@@ -116,7 +116,7 @@ describe("profitable option buys", () => {
       spot: 1000,
       eodSpot: 1030,
       premium: 12,
-      expiry: "2099-01-01",
+      expiry: "2026-06-18",
       lotSize: 50,
       held: false,
       existing: "NO_BUY",
@@ -132,7 +132,7 @@ describe("profitable option buys", () => {
       spot: 1000,
       eodSpot: 970,
       premium: 8,
-      expiry: "2099-01-01",
+      expiry: "2026-06-18",
       lotSize: 50,
       held: false,
       existing: "NO_BUY",

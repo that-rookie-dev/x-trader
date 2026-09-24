@@ -93,7 +93,7 @@ describe("forecast levels", () => {
       future: "HDFCBANK26SEPFUT",
       call: "HDFCBANK26SEP740CE",
       put: "HDFCBANK26SEP740PE",
-      expiry: "2026-09-29",
+      expiry: "2026-10-27",
     });
     expect(bull.find((i) => i.kind === "CE")?.action).toBe("BUY");
     expect(bull.find((i) => i.kind === "CE")?.exit).toMatch(/Sell the CE/);
@@ -112,7 +112,7 @@ describe("forecast levels", () => {
       future: "RELIANCE26SEPFUT",
       call: "RELIANCE26SEP1250CE",
       put: "RELIANCE26SEP1250PE",
-      expiry: "2026-09-29",
+      expiry: "2026-10-27",
     });
     expect(bear.find((i) => i.kind === "PE")?.action).toBe("BUY");
     expect(bear.find((i) => i.kind === "CE")?.action).toBe("SKIP");

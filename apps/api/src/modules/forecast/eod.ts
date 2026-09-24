@@ -1,5 +1,7 @@
 import { money, type AiStudy, type ForecastBias } from "@xtrader/domain";
+import { blackScholesIv, blackScholesPrice } from "../indicators/index.js";
 import { optionPnl, optionPnlShort } from "./charges.js";
+import { isIndexUnderlying } from "./levels.js";
 import { liquidEnough, mapInvalidated, sessionClock } from "./chain-tape.js";
 import type { AgentMark } from "./desk.js";
 import {
@@ -279,6 +281,20 @@ function tradeDirection(spot: number, eodSpot: number): "PE" | "CE" | null {
   return null;
 }
 
+function yearsUntil(expiry: string | null, at: Date): number {
+  if (!expiry) return 3 / 365;
+  const end = new Date(`${expiry}T15:30:00+05:30`);
+  return Math.max((end.getTime() - at.getTime()) / (365.25 * 24 * 60 * 60 * 1000), 0);
+}
+
+/** Stock F&O delivery margin starts four sessions before a Tuesday expiry. Six calendar days covers that week. */
+export function inPhysicalWindow(symbol: string, expiry: string | null, now = new Date()): boolean {
+  if (!expiry || isIndexUnderlying(symbol)) return false;
+  const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const days = (new Date(`${expiry}T15:30:00+05:30`).getTime() - new Date(`${today}T12:00:00+05:30`).getTime()) / 86400000;
+  return days <= 6;
+}
+
 export function estimateOptionEod(input: {
   kind: "CE" | "PE";
   strike: number;
@@ -287,16 +303,31 @@ export function estimateOptionEod(input: {
   premium: number | null;
   expiry: string | null;
   params?: ForecastParams;
+  now?: Date;
+  /** Futures price when the chain has one. Carry is already in the future, so the rate used with it is 0. */
+  futurePx?: number | null;
 }): { eodPremium: string; moneyness: "ITM" | "ATM" | "OTM" } {
   const params = input.params ?? DEFAULT_FORECAST_PARAMS;
+  const now = input.now ?? new Date();
   const intrinsicNow = input.kind === "CE" ? Math.max(input.spot - input.strike, 0) : Math.max(input.strike - input.spot, 0);
   const intrinsicEod = input.kind === "CE" ? Math.max(input.eodSpot - input.strike, 0) : Math.max(input.strike - input.eodSpot, 0);
   const premium = input.premium != null && input.premium > 0 ? input.premium : Math.max(intrinsicNow, 0.05);
   const timeValue = Math.max(premium - intrinsicNow, 0);
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const expiryToday = Boolean(input.expiry && input.expiry <= today);
   const remain = expiryToday ? params.optionRemainExpiry : params.optionRemainLater;
-  const eodPremium = Math.max(intrinsicEod + timeValue * remain, 0.05);
+  const flat = Math.max(intrinsicEod + timeValue * remain, 0.05);
+  const useFuture = input.futurePx != null && input.futurePx > 0 && input.spot > 0;
+  const undNow = useFuture ? input.futurePx! : input.spot;
+  const basis = useFuture ? input.futurePx! / input.spot : 1;
+  const rate = useFuture ? 0 : 0.065;
+  const tNow = yearsUntil(input.expiry, now);
+  const eodAt = new Date(`${today}T15:30:00+05:30`);
+  const tEod = yearsUntil(input.expiry, eodAt);
+  const iv = tNow > 1 / 24 / 365 ? blackScholesIv(premium, undNow, input.strike, tNow, input.kind, rate) : null;
+  const modelled = iv != null ? blackScholesPrice(input.eodSpot * basis, input.strike, tEod, iv, input.kind, rate) : flat;
+  const priced = Number.isFinite(modelled) ? modelled : flat;
+  const eodPremium = Math.max(priced, expiryToday ? intrinsicEod : 0, 0.05);
   const dist = Math.abs(input.eodSpot - input.strike);
   const atmBand = Math.max(input.eodSpot * 0.002, 1);
   const moneyness: "ITM" | "ATM" | "OTM" = dist <= atmBand ? "ATM" : intrinsicEod > 0 ? "ITM" : "OTM";
@@ -329,6 +360,9 @@ export function eodTradeView(input: {
   richIv?: boolean;
   adxAgainst?: boolean;
   params?: ForecastParams;
+  futurePx?: number | null;
+  /** Cash symbol. Stock names inside the delivery week are not opened. */
+  underlying?: string | null;
 }): {
   eodPremium: string;
   moneyness: "ITM" | "ATM" | "OTM";
@@ -339,14 +373,20 @@ export function eodTradeView(input: {
   mark: AgentMark;
   why: string;
 } {
-  const est = estimateOptionEod(input);
+  const now = input.now ?? new Date();
+  const est = estimateOptionEod({ ...input, now });
   const sideNow = spotMoneyness(input.kind, input.strike, input.spot);
   const entry = input.premium != null && input.premium > 0 ? input.premium : Number(est.eodPremium);
   const exit = Number(est.eodPremium);
-  const pnl = optionPnl({ entry, exit, qty: Math.max(1, input.lotSize) });
-  const shortPnl = optionPnlShort({ entry, exit, qty: Math.max(1, input.lotSize) });
+  const qty = Math.max(1, input.lotSize);
+  const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const expiryToday = Boolean(input.expiry && input.expiry <= today);
+  const intrinsicEod = input.kind === "CE" ? Math.max(input.eodSpot - input.strike, 0) : Math.max(input.strike - input.eodSpot, 0);
+  const pnl = optionPnl({ entry, exit, qty });
+  const shortPnl = optionPnlShort({ entry, exit, qty, exerciseIntrinsic: expiryToday ? intrinsicEod : 0 });
   const net = Number(pnl.net);
   const shortNet = Number(shortPnl.net);
+  const physical = input.underlying ? inPhysicalWindow(input.underlying, input.expiry, now) : false;
   const want = tradeDirection(input.spot, input.eodSpot);
   const cheap = isCheapSide(input.kind, input.strike, input.spot);
   const inPlay = isInPlayStrike(input.kind, input.strike, input.spot, input.eodSpot);
@@ -363,7 +403,10 @@ export function eodTradeView(input: {
   let mark: AgentMark = "NO_BUY";
   let why = "Expected EOD move does not cover charges.";
 
-  if (heldSide === "LONG" && (input.existing === "SELL" || shortNet >= floor || net < floor * 0.5)) {
+  if (heldSide === "LONG" && physical) {
+    mark = "SELL";
+    why = "Delivery week — square off this stock option before expiry. An ITM strike becomes a share obligation.";
+  } else if (heldSide === "LONG" && (input.existing === "SELL" || shortNet >= floor || net < floor * 0.5)) {
     mark = "SELL";
     why = "You hold long — helper wants this closed (or edge faded).";
   } else if (heldSide === "SHORT") {
@@ -379,6 +422,8 @@ export function eodTradeView(input: {
   } else if (invalidated) {
     why = "Map invalidated — spot broke the session band against the bias.";
     mark = input.existing === "WAIT" ? "WAIT" : "NO_BUY";
+  } else if (physical) {
+    why = "Stock F&O is inside the physical-delivery week. Square off before expiry; do not open a new option.";
   } else if (input.richIv && net >= floor) {
     why = "IV is rich vs realized vol — premium is expensive to buy; prefer a write only if short edge clears the floor.";
   } else if (net >= floor) {

@@ -252,6 +252,13 @@ export type Idea = {
   rank?: number | null;
 };
 
+function inDeliveryWindow(symbol: string, expiry: string | null): boolean {
+  if (!expiry || isIndexUnderlying(symbol)) return false;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const days = (new Date(`${expiry}T15:30:00+05:30`).getTime() - new Date(`${today}T12:00:00+05:30`).getTime()) / 86400000;
+  return days <= 6;
+}
+
 function isoDays(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() + n);
@@ -288,7 +295,11 @@ export function buildSuggestions(input: {
   expiry: string | null;
   callPx?: string | null;
   putPx?: string | null;
+  derivativeExchange?: string | null;
 }): Idea[] {
+  const fnoExchange = input.derivativeExchange || "NFO";
+  const cashExchange = spotRefForUnderlying(input.symbol).exchange;
+  const deliveryWeek = inDeliveryWindow(input.symbol, input.expiry);
   const ideas: Idea[] = [];
   const expiry = input.expiry;
   const rsiVal = input.rsi ?? null;
@@ -472,5 +483,17 @@ export function buildSuggestions(input: {
       horizon: "SWING",
     });
   }
-  return ideas;
+  return ideas.map((idea) => {
+    if (idea.lane === "FNO" && deliveryWeek && idea.action === "BUY") {
+      return {
+        ...idea,
+        exchange: fnoExchange,
+        action: "WAIT" as const,
+        primary: false,
+        why: "Physical delivery week on this stock. Do not open. Square off an existing ITM option or future before expiry.",
+      };
+    }
+    if (idea.lane === "FNO") return { ...idea, exchange: fnoExchange };
+    return { ...idea, exchange: cashExchange };
+  });
 }

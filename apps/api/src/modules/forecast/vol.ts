@@ -95,7 +95,7 @@ export async function snapshotVol(
         },
       });
   }
-  const rows = await db.select().from(volHistory).where(eq(volHistory.symbol, input.symbol)).orderBy(desc(volHistory.sessionDate)).limit(20);
+  const rows = await db.select().from(volHistory).where(eq(volHistory.symbol, input.symbol)).orderBy(desc(volHistory.sessionDate)).limit(252);
   const history = rows.map((row) => Number(row.ivAtm)).filter((n) => Number.isFinite(n) && n > 0);
   const rank = ivAtm != null ? ivRank(ivAtm, history) : null;
   return {

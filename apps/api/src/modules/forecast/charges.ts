@@ -1,13 +1,21 @@
 import { d, money } from "@xtrader/domain";
 
-/** Zerodha-style NSE F&O option charges. Rates are published-style estimates. */
+/**
+ * Zerodha-style NSE F&O charges in force on 24 Sep 2026.
+ * STT: Finance Act 2026 from 1 Apr 2026 (NSE/FATAX/73524).
+ * Exchange + IPFT: NSE schedule from 1 Mar 2026, ₹3,553 per crore of option premium.
+ */
 export const OPTION_CHARGE_RATES = {
   brokerageCap: 20,
   brokeragePct: 0.0003,
-  sttSellPct: 0.001,
-  exchangePct: 0.0003503,
+  sttSellPct: 0.0015,
+  sttExercisePct: 0.0015,
+  sttFutureSellPct: 0.0005,
+  exchangePct: 0.0003553,
+  futureExchangePct: 0.0000183,
   sebiPct: 0.000001,
   stampBuyPct: 0.00003,
+  stampFutureBuyPct: 0.00002,
   gstPct: 0.18,
 };
 
@@ -59,7 +67,7 @@ export function optionRoundTrip(input: { buyPremium: number; sellPremium: number
     buy,
     sell,
     total: money(d(buy.total).plus(sell.total), 2),
-    note: "NSE F&O option estimate: brokerage ₹20/order or 0.03%, STT 0.1% on sell premium, exchange 0.03503%, SEBI ₹10/crore, stamp 0.003% on buy, GST 18% on brokerage+exchange+SEBI.",
+    note: "NSE F&O option estimate: brokerage ₹20/order or 0.03%, STT 0.15% on sell premium, exchange+IPFT 0.03553%, SEBI ₹10/crore, stamp 0.003% on buy, GST 18% on brokerage+exchange+SEBI.",
   };
 }
 
@@ -91,14 +99,20 @@ export function optionPnl(input: { entry: number; exit: number; qty: number }): 
   };
 }
 
-/** Sell premium now, buy back at EOD (write / short). */
-export function optionPnlShort(input: { entry: number; exit: number; qty: number }): ReturnType<typeof optionPnl> {
+/** STT the writer pays if an ITM option expires instead of being bought back. Intrinsic points, not premium. */
+export function exerciseStt(intrinsic: number, qty: number): number {
+  return Math.max(0, intrinsic) * Math.max(1, Math.floor(qty)) * OPTION_CHARGE_RATES.sttExercisePct;
+}
+
+/** Sell premium now, buy back at EOD (write / short). Pass exerciseIntrinsic when the short is held through expiry. */
+export function optionPnlShort(input: { entry: number; exit: number; qty: number; exerciseIntrinsic?: number }): ReturnType<typeof optionPnl> {
   const qty = Math.max(1, Math.floor(input.qty));
   const sellNotional = input.entry * qty;
   const buyNotional = input.exit * qty;
   const charges = optionRoundTrip({ buyPremium: input.exit, sellPremium: input.entry, qty });
+  const exercised = exerciseStt(input.exerciseIntrinsic ?? 0, qty);
   const gross = sellNotional - buyNotional;
-  const net = gross - Number(charges.total);
+  const net = gross - Number(charges.total) - exercised;
   return {
     qty,
     entry: money(input.entry, 2),

@@ -13,18 +13,89 @@ function asBias(value: string | undefined): Bias {
   return value === "BULLISH" || value === "BEARISH" ? value : "RANGE";
 }
 
-function estimateOptionEod(input: { kind: "CE" | "PE"; strike: number; spot: number; eodSpot: number; premium: number | null; expiry: string | null }) {
+function normCdf(x: number): number {
+  const a1 = 0.254829592;
+  const a2 = -0.284496736;
+  const a3 = 1.421413741;
+  const a4 = -1.453152027;
+  const a5 = 1.061405429;
+  const p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const t = 1 / (1 + p * Math.abs(x));
+  const y = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp((-x * x) / 2);
+  return 0.5 * (1 + sign * y);
+}
+
+function bsPrice(spot: number, strike: number, tYears: number, vol: number, kind: "CE" | "PE", rate: number): number {
+  if (!(tYears > 0) || !(vol > 0)) return Math.max(kind === "CE" ? spot - strike : strike - spot, 0);
+  const srt = vol * Math.sqrt(tYears);
+  const d1 = (Math.log(spot / strike) + (rate + 0.5 * vol * vol) * tYears) / srt;
+  const d2 = d1 - srt;
+  const df = Math.exp(-rate * tYears);
+  if (kind === "CE") return spot * normCdf(d1) - strike * df * normCdf(d2);
+  return strike * df * normCdf(-d2) - spot * normCdf(-d1);
+}
+
+function bsIv(premium: number, spot: number, strike: number, tYears: number, kind: "CE" | "PE", rate: number): number | null {
+  if (!(premium > 0) || !(spot > 0) || !(strike > 0) || !(tYears > 0)) return null;
+  const intrinsic = Math.max(kind === "CE" ? spot - strike : strike - spot, 0);
+  if (premium + 1e-6 < intrinsic * 0.98) return null;
+  let sigma = 0.25;
+  for (let i = 0; i < 40; i += 1) {
+    const price = bsPrice(spot, strike, tYears, sigma, kind, rate);
+    const srt = Math.max(sigma * Math.sqrt(tYears), 1e-8);
+    const d1 = (Math.log(spot / strike) + (rate + 0.5 * sigma * sigma) * tYears) / srt;
+    const vega = spot * Math.exp(-0.5 * d1 * d1) / Math.sqrt(2 * Math.PI) * Math.sqrt(tYears);
+    if (vega < 1e-8) break;
+    const next = sigma - (price - premium) / vega;
+    if (!Number.isFinite(next) || next <= 0.01) return null;
+    if (Math.abs(next - sigma) < 1e-4) return next;
+    sigma = Math.min(3, next);
+  }
+  return Number.isFinite(sigma) && sigma > 0 ? sigma : null;
+}
+
+function yearsUntil(expiry: string | null, at: Date): number {
+  if (!expiry) return 3 / 365;
+  return Math.max((new Date(`${expiry}T15:30:00+05:30`).getTime() - at.getTime()) / (365.25 * 24 * 60 * 60 * 1000), 0);
+}
+
+function isIndexSymbol(symbol: string): boolean {
+  const s = symbol.trim().toUpperCase();
+  return s === "SENSEX" || s === "BANKEX" || s.includes("NIFTY");
+}
+
+function estimateOptionEod(input: {
+  kind: "CE" | "PE";
+  strike: number;
+  spot: number;
+  eodSpot: number;
+  premium: number | null;
+  expiry: string | null;
+  now?: Date;
+  futurePx?: number | null;
+}) {
+  const now = input.now ?? new Date();
   const intrinsicNow = input.kind === "CE" ? Math.max(input.spot - input.strike, 0) : Math.max(input.strike - input.spot, 0);
   const intrinsicEod = input.kind === "CE" ? Math.max(input.eodSpot - input.strike, 0) : Math.max(input.strike - input.eodSpot, 0);
   const premium = input.premium != null && input.premium > 0 ? input.premium : Math.max(intrinsicNow, 0.05);
   const timeValue = Math.max(premium - intrinsicNow, 0);
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const remain = input.expiry && input.expiry <= today ? 0.08 : 0.55;
-  const eodPremium = Math.max(intrinsicEod + timeValue * remain, 0.05);
+  const flat = Math.max(intrinsicEod + timeValue * remain, 0.05);
+  const useFuture = input.futurePx != null && input.futurePx > 0 && input.spot > 0;
+  const undNow = useFuture ? input.futurePx! : input.spot;
+  const basis = useFuture ? input.futurePx! / input.spot : 1;
+  const rate = useFuture ? 0 : 0.065;
+  const iv = yearsUntil(input.expiry, now) > 1 / 24 / 365 ? bsIv(premium, undNow, input.strike, yearsUntil(input.expiry, now), input.kind, rate) : null;
+  const modelled = iv != null ? bsPrice(input.eodSpot * basis, input.strike, yearsUntil(input.expiry, new Date(`${today}T15:30:00+05:30`)), iv, input.kind, rate) : flat;
+  const priced = Number.isFinite(modelled) ? modelled : flat;
+  const expiryToday = Boolean(input.expiry && input.expiry <= today);
+  const eodPremium = Math.max(priced, expiryToday ? intrinsicEod : 0, 0.05);
   const dist = Math.abs(input.eodSpot - input.strike);
   const atmBand = Math.max(input.eodSpot * 0.002, 1);
   const eodMoneyness: "ITM" | "ATM" | "OTM" = dist <= atmBand ? "ATM" : intrinsicEod > 0 ? "ITM" : "OTM";
-  return { eodPremium: money(eodPremium), eodMoneyness };
+  return { eodPremium: money(eodPremium), eodMoneyness, intrinsicEod };
 }
 
 function spotMoneyness(kind: "CE" | "PE", strike: number, spot: number): "ITM" | "ATM" | "OTM" {
@@ -95,15 +166,17 @@ function repriceLeg(
   spot: number,
   eodSpot: number,
   expiry: string | null,
-  gates: { cutoff: boolean; netFloor: number; invalidated: boolean },
+  gates: { cutoff: boolean; netFloor: number; invalidated: boolean; physical: boolean; futurePx: number | null },
 ): ChainLeg {
   const premium = leg.lastPrice != null ? Number(leg.lastPrice) : null;
-  const est = estimateOptionEod({ kind, strike, spot, eodSpot, premium, expiry });
+  const est = estimateOptionEod({ kind, strike, spot, eodSpot, premium, expiry, futurePx: gates.futurePx });
   const entry = premium != null && premium > 0 ? premium : Number(est.eodPremium);
   const exit = Number(est.eodPremium);
   const qty = Math.max(1, leg.lotSize ?? 1);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const expiryToday = Boolean(expiry && expiry <= today);
   const pnl = clientOptionPnl({ entry, exit, qty });
-  const shortPnl = clientOptionPnlShort({ entry, exit, qty });
+  const shortPnl = clientOptionPnlShort({ entry, exit, qty, exerciseIntrinsic: expiryToday ? est.intrinsicEod : 0 });
   const net = Number(pnl.net);
   const shortNet = Number(shortPnl.net);
   const want = tradeDirection(spot, eodSpot);
@@ -130,6 +203,9 @@ function repriceLeg(
     mark = "NO_BUY";
   } else if (gates.invalidated) {
     why = "Map invalidated — spot broke the session band against the bias.";
+    mark = "NO_BUY";
+  } else if (gates.physical) {
+    why = "Stock F&O is inside the physical-delivery week. Square off before expiry; do not open a new option.";
     mark = "NO_BUY";
   } else if (net >= gates.netFloor) {
     mark = "BUY";
@@ -232,10 +308,16 @@ function repriceBoard(board: OptionsBoard): OptionsBoard {
   const expectedHigh = Number(board.session?.expectedHigh ?? board.eod?.high ?? last);
   const target = chainEodClose(board, last);
   const clock = sessionClock(new Date(), board.expiry);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const daysToExpiry = board.expiry
+    ? (new Date(`${board.expiry}T15:30:00+05:30`).getTime() - new Date(`${today}T12:00:00+05:30`).getTime()) / 86400000
+    : 99;
   const gates = {
     cutoff: clock.cutoff,
     netFloor: clock.netFloor,
     invalidated: mapInvalidated(bias, last, expectedLow, expectedHigh),
+    physical: !isIndexSymbol(board.symbol) && daysToExpiry <= 6,
+    futurePx: board.future?.lastPrice != null ? Number(board.future.lastPrice) : null,
   };
   const rows = board.rows.map((row) => ({
     ...row,

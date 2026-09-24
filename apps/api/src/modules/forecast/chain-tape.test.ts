@@ -82,7 +82,7 @@ describe("eodTradeView gates", () => {
     spot: 1000,
     eodSpot: 970,
     premium: 12,
-    expiry: "2099-01-01",
+    expiry: "2026-06-16",
     lotSize: 50,
     held: false,
     existing: "NO_BUY" as const,

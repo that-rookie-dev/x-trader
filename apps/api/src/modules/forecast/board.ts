@@ -200,6 +200,8 @@ export async function buildOptionsBoard(
       netFloor,
       cutoff: clock.cutoff,
       richIv: vol.rich,
+      futurePx: chain.future ? Number(qmap.get(`${chain.future.exchange}:${chain.future.tradingsymbol}`)?.lastPrice ?? 0) || null : null,
+      underlying: symbol,
       adxAgainst: adxAgainstKind(adxSnap, kind),
       params: activeParams ?? undefined,
     });

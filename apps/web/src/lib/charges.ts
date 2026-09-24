@@ -3,15 +3,16 @@ import type { OptionPnl } from "./desk";
 const RATES = {
   brokerageCap: 20,
   brokeragePct: 0.0003,
-  sttSellPct: 0.001,
-  exchangePct: 0.0003503,
+  sttSellPct: 0.0015,
+  sttExercisePct: 0.0015,
+  exchangePct: 0.0003553,
   sebiPct: 0.000001,
   stampBuyPct: 0.00003,
   gstPct: 0.18,
 };
 
 const NOTE =
-  "NSE F&O option estimate: brokerage ₹20/order or 0.03%, STT 0.1% on sell premium, exchange 0.03503%, SEBI ₹10/crore, stamp 0.003% on buy, GST 18% on brokerage+exchange+SEBI.";
+  "NSE F&O option estimate: brokerage ₹20/order or 0.03%, STT 0.15% on sell premium, exchange+IPFT 0.03553%, SEBI ₹10/crore, stamp 0.003% on buy, GST 18% on brokerage+exchange+SEBI.";
 
 function money(n: number): string {
   const sign = n < 0 ? "-" : "";
@@ -63,14 +64,15 @@ export function clientOptionPnl(input: { entry: number; exit: number; qty: numbe
   };
 }
 
-/** Sell now, buy back at exit (short / write). */
-export function clientOptionPnlShort(input: { entry: number; exit: number; qty: number }): OptionPnl {
+/** Sell now, buy back at exit (short / write). exerciseIntrinsic adds writer STT when the option expires ITM. */
+export function clientOptionPnlShort(input: { entry: number; exit: number; qty: number; exerciseIntrinsic?: number }): OptionPnl {
   const qty = Math.max(1, Math.floor(input.qty));
   const sellNotional = input.entry * qty;
   const buyNotional = input.exit * qty;
   const sell = line(input.entry, qty, "SELL");
   const buy = line(input.exit, qty, "BUY");
-  const chargesTotal = Number(buy.total) + Number(sell.total);
+  const exercised = Math.max(0, input.exerciseIntrinsic ?? 0) * qty * RATES.sttExercisePct;
+  const chargesTotal = Number(buy.total) + Number(sell.total) + exercised;
   const gross = sellNotional - buyNotional;
   return {
     qty,

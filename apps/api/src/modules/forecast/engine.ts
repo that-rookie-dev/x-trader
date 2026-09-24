@@ -160,8 +160,9 @@ export class ForecastEngine {
           : profile?.allowFutures || profile?.allowOptions),
     );
 
-    const callPx = deriv.call ? await this.market.freshLtp("NFO", deriv.call.tradingsymbol) : null;
-    const putPx = deriv.put ? await this.market.freshLtp("NFO", deriv.put.tradingsymbol) : null;
+    const fnoExchange = deriv.call?.exchange ?? deriv.put?.exchange ?? deriv.future?.exchange ?? "NFO";
+    const callPx = deriv.call ? await this.market.freshLtp(deriv.call.exchange || fnoExchange, deriv.call.tradingsymbol) : null;
+    const putPx = deriv.put ? await this.market.freshLtp(deriv.put.exchange || fnoExchange, deriv.put.tradingsymbol) : null;
     const rawIdeas = buildSuggestions({
       symbol,
       instrumentType,
@@ -183,6 +184,7 @@ export class ForecastEngine {
       expiry,
       callPx,
       putPx,
+      derivativeExchange: fnoExchange,
     });
     let suggestions = rawIdeas;
     if (instrumentType === "EQUITY") {

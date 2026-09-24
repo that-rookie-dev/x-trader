@@ -333,9 +333,9 @@ export class MarketDataService extends EventEmitter {
     spot: number,
     expiryDate?: string | null,
   ): Promise<{
-    future: { tradingsymbol: string; expiry: string; lotSize: number } | null;
-    call: { tradingsymbol: string; expiry: string; strike: number } | null;
-    put: { tradingsymbol: string; expiry: string; strike: number } | null;
+    future: { tradingsymbol: string; expiry: string; lotSize: number; exchange: string } | null;
+    call: { tradingsymbol: string; expiry: string; strike: number; exchange: string } | null;
+    put: { tradingsymbol: string; expiry: string; strike: number; exchange: string } | null;
     note: string;
   }> {
     const name = underlyingFnoName(symbol);
@@ -351,7 +351,7 @@ export class MarketDataService extends EventEmitter {
       null;
     const futureRow = futs.find((row) => row.expiry === expiry) ?? null;
     const future = futureRow
-      ? { tradingsymbol: futureRow.tradingsymbol, expiry: futureRow.expiry!, lotSize: futureRow.lotSize }
+      ? { tradingsymbol: futureRow.tradingsymbol, expiry: futureRow.expiry!, lotSize: futureRow.lotSize, exchange: futureRow.exchange || "NFO" }
       : null;
     const opts = chain.filter((r) => (r.instrumentType === "CE" || r.instrumentType === "PE") && r.expiry === expiry);
     const atm = opts.reduce<typeof opts[0] | null>((best, row) => {
@@ -367,8 +367,8 @@ export class MarketDataService extends EventEmitter {
       : undefined;
     return {
       future,
-      call: call ? { tradingsymbol: call.tradingsymbol, expiry: call.expiry!, strike: call.strike } : null,
-      put: put ? { tradingsymbol: put.tradingsymbol, expiry: put.expiry!, strike: put.strike } : null,
+      call: call ? { tradingsymbol: call.tradingsymbol, expiry: call.expiry!, strike: call.strike, exchange: call.exchange || "NFO" } : null,
+      put: put ? { tradingsymbol: put.tradingsymbol, expiry: put.expiry!, strike: put.strike, exchange: put.exchange || "NFO" } : null,
       note: expiry
         ? `Contracts for ${name} until ${expiry}.`
         : `No contracts cached yet for ${name}.`,
