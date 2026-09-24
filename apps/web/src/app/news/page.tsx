@@ -5,7 +5,7 @@ import { showDec } from "@/lib/format";
 import { useEffect, useRef, useState } from "react";
 
 type Name = { exchange: string; symbol: string };
-type Headline = { title: string; url: string; snippet: string; note?: string };
+type Headline = { title: string; url: string; snippet: string; note?: string; image?: string };
 type Entry = { at: string; score: number; points: number; summary: string; headlines: Headline[] };
 type Feed = {
   active?: boolean;
@@ -14,6 +14,7 @@ type Feed = {
   exchange: string | null;
   delta: { score: number; points: number; summary: string; updatedAt: string } | null;
   entries: Entry[];
+  work?: { running: boolean; phase: "idle" | "scraping" | "reading" | "scoring"; symbol: string };
 };
 type Preview = { url: string; site: string; title: string; description: string; image: string };
 
@@ -158,7 +159,16 @@ export default function NewsPage() {
           stick.current = el.scrollTop < 80;
         }}
       >
-        <article className="news-bubble wait">
+        {feed.work?.running ? (
+          <article className="news-bubble live">
+            <header>
+              <time>{clock(new Date(now).toISOString())}</time>
+              <span>{phaseLabel(feed.work.phase)}</span>
+            </header>
+            <p className="news-say">{phaseLine(feed.work.phase, feed.work.symbol || feed.symbol || "")}<i className="news-caret" /></p>
+          </article>
+        ) : null}
+        <article className="news-bubble">
           <header>
             <time>{clock(new Date(nextAt).toISOString())}</time>
             <span>NEXT READ</span>
@@ -187,6 +197,11 @@ export default function NewsPage() {
                   </span>
                   <span className={tone(entry.score)}>score {showDec(entry.score, 2)}</span>
                 </header>
+                <p className="news-say">
+                  <b>{feed.symbol}. </b>
+                  {summary}
+                  {live && typed.length < (entry.summary || "").length ? <i className="news-caret" /> : null}
+                </p>
                 {entry.headlines.length > 0 ? (
                   <div className="news-cards">
                     {entry.headlines.map((item) => (
@@ -194,10 +209,6 @@ export default function NewsPage() {
                     ))}
                   </div>
                 ) : null}
-                <p className="news-say">
-                  {summary}
-                  {live && typed.length < (entry.summary || "").length ? <i className="news-caret" /> : null}
-                </p>
               </article>
             );
           })
@@ -245,13 +256,16 @@ function LinkCard({ item, symbol }: { item: Headline; symbol: string }) {
   const title = card?.title || item.title;
   const description = card?.description || item.snippet;
   const site = card?.site || host(item.url);
-  const image = imageOk ? card?.image ?? "" : "";
+  const remote = (imageOk ? card?.image || item.image : "") || "";
+  const image = remote ? `/api/news/image?url=${encodeURIComponent(remote)}` : "";
 
   return (
-    <a className={`news-card${image ? "" : " solo"}`} href={item.url} target="_blank" rel="noreferrer">
+    <a className="news-card" href={item.url} target="_blank" rel="noreferrer">
       {image ? (
         <img src={image} alt="" onError={() => setImageOk(false)} />
-      ) : null}
+      ) : (
+        <span className="news-shot" aria-hidden="true" />
+      )}
       <div>
         <small>{site || "SOURCE"}</small>
         <strong>{title || "Untitled"}</strong>
@@ -260,6 +274,18 @@ function LinkCard({ item, symbol }: { item: Headline; symbol: string }) {
       </div>
     </a>
   );
+}
+
+function phaseLabel(phase: string): string {
+  if (phase === "scoring") return "MODEL";
+  if (phase === "reading") return "READING";
+  return "SCRAPING";
+}
+
+function phaseLine(phase: string, symbol: string): string {
+  if (phase === "scoring") return `Asking the model whether this news affects ${symbol}.`;
+  if (phase === "reading") return `Reading pages for ${symbol}.`;
+  return `Scraping Google News, Bing, Yahoo, and the open web for ${symbol}.`;
 }
 
 function tone(value: number): string {

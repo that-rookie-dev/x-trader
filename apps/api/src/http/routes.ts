@@ -14,7 +14,7 @@ import { compareEod, predictEodSpot, viewAiStudy } from "../modules/forecast/eod
 import { pickExpiringDesk } from "../modules/forecast/levels.js";
 import { buildOptionsBoard } from "../modules/forecast/board.js";
 import { marketBlocksPaper } from "../modules/forecast/chain-tape.js";
-import { linkPreview } from "../modules/research/opengraph.js";
+import { fetchPreviewImage, linkPreview } from "../modules/research/opengraph.js";
 
 export function registerRoutes(app: Express, s: AppServices): void {
   app.get("/api/health", (_req, res) => {
@@ -1022,7 +1022,16 @@ export function registerRoutes(app: Express, s: AppServices): void {
       const entries = await s.research.tape(picked.exchange, picked.symbol);
       const slotMs = 15 * 60 * 1000;
       const nextAt = Math.floor(Date.now() / slotMs) * slotMs + slotMs;
-      res.json({ active: true, symbols: names, symbol: picked.symbol, exchange: picked.exchange, delta, entries, nextAt });
+      res.json({
+        active: true,
+        symbols: names,
+        symbol: picked.symbol,
+        exchange: picked.exchange,
+        delta,
+        entries,
+        nextAt,
+        work: s.research.workStatus(),
+      });
     }),
   );
 
@@ -1032,6 +1041,21 @@ export function registerRoutes(app: Express, s: AppServices): void {
     asyncHandler(async (req, res) => {
       const url = String(req.query.url ?? "");
       res.json((await linkPreview(url)) ?? { url, site: "", title: "", description: "", image: "" });
+    }),
+  );
+
+  app.get(
+    "/api/news/image",
+    s.sessions.middleware("optional"),
+    asyncHandler(async (req, res) => {
+      const file = await fetchPreviewImage(String(req.query.url ?? ""));
+      if (!file) {
+        res.status(404).end();
+        return;
+      }
+      res.setHeader("Content-Type", file.type);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(file.body);
     }),
   );
 

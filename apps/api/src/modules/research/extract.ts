@@ -17,8 +17,8 @@ export function htmlToText(html: string, maxLen = 1800): string {
   return text.length <= maxLen ? text : `${text.slice(0, maxLen - 1)}…`;
 }
 
-export function parseRssItems(xml: string, limit = 8): Array<{ title: string; url: string; snippet: string }> {
-  const items: Array<{ title: string; url: string; snippet: string }> = [];
+export function parseRssItems(xml: string, limit = 8): Array<{ title: string; url: string; snippet: string; image?: string }> {
+  const items: Array<{ title: string; url: string; snippet: string; image?: string }> = [];
   const re = /<item>([\s\S]*?)<\/item>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(xml)) !== null && items.length < limit) {
@@ -26,7 +26,10 @@ export function parseRssItems(xml: string, limit = 8): Array<{ title: string; ur
     const title = stripTag(block, "title");
     const url = stripTag(block, "link") || (block.match(/<guid[^>]*>([\s\S]*?)<\/guid>/i)?.[1] ?? "");
     const snippet = stripTag(block, "description");
-    if (title && url.startsWith("http")) items.push({ title, url: url.trim(), snippet });
+    const image = block.match(/<media:content[^>]+url=["']([^"']+)["']/i)?.[1]
+      || block.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*type=["']image/i)?.[1]
+      || "";
+    if (title && url.startsWith("http")) items.push({ title, url: url.trim(), snippet, ...(image ? { image } : {}) });
   }
   return items;
 }

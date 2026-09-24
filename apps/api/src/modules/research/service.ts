@@ -21,7 +21,7 @@ export interface ResearchPack {
   query: string;
   searchedAt: string;
   newsScore: number;
-  headlines: Array<{ title: string; url: string; snippet: string; note?: string }>;
+  headlines: Array<{ title: string; url: string; snippet: string; note?: string; image?: string }>;
   pages: ScrapedPage[];
   summary: string;
 }
@@ -31,8 +31,12 @@ const GATHER_AT_ONCE = 3;
 type WatchItem = { exchange: string; symbol: string; last: number };
 type Gathered = WatchItem & { headlines: ResearchPack["headlines"]; pages: ScrapedPage[] };
 
+export type NewsPhase = "idle" | "scraping" | "reading" | "scoring";
+
 export class ResearchService {
   private running = false;
+  private phase: NewsPhase = "idle";
+  private phaseSymbol = "";
   private worldSlot = -1;
   private worldHeadlines: ResearchPack["headlines"] = [];
 
@@ -52,15 +56,22 @@ export class ResearchService {
     const due = await this.dueItems(items, slotStart);
     if (due.length === 0) return 0;
     this.running = true;
+    this.phase = "scraping";
+    this.phaseSymbol = due[0]?.symbol ?? "";
     try {
       await this.worldForSlot(slotStart);
       const gathered: Gathered[] = [];
       await this.pool(due, GATHER_AT_ONCE, async (item) => {
+        this.phase = "scraping";
+        this.phaseSymbol = item.symbol;
         const sources = await this.gather(item.symbol, slotStart);
+        this.phase = "reading";
         gathered.push({ ...item, ...sources });
       });
       let saved = 0;
       for (const item of gathered) {
+        this.phase = "scoring";
+        this.phaseSymbol = item.symbol;
         const analysed =
           item.headlines.length === 0 && item.pages.length === 0
             ? { ok: true as const, newsScore: 0, summary: "No headlines this slot.", notes: [] }
@@ -86,7 +97,13 @@ export class ResearchService {
       return saved;
     } finally {
       this.running = false;
+      this.phase = "idle";
+      this.phaseSymbol = "";
     }
+  }
+
+  workStatus(): { running: boolean; phase: NewsPhase; symbol: string } {
+    return { running: this.running, phase: this.phase, symbol: this.phaseSymbol };
   }
 
   async study(symbol: string, extraQuery = ""): Promise<ResearchPack> {
@@ -214,12 +231,22 @@ export class ResearchService {
   private async gather(symbol: string, slotStart: number): Promise<Pick<Gathered, "headlines" | "pages">> {
     const world = await this.worldForSlot(slotStart);
     let news: Array<{ title: string; url: string; snippet: string }> = [];
+    let search: SearchResult[] = [];
     try {
-      news = await fetchNewsRss(`${symbol} stock`);
+      news = await fetchNewsRss(`${symbol} stock India`);
     } catch {
       news = [];
     }
-    const headlines = [...news.slice(0, 4), ...world].filter((item, index, all) => all.findIndex((other) => other.title === item.title) === index).slice(0, 8);
+    try {
+      search = await duckDuckGoSearch(`${symbol} stock news India`);
+    } catch {
+      search = [];
+    }
+    const headlines = [
+      ...news,
+      ...search.slice(0, 4).map((item) => ({ title: item.title, url: item.url, snippet: item.snippet })),
+      ...world,
+    ].filter((item, index, all) => all.findIndex((other) => other.title === item.title) === index).slice(0, 8);
     const page = headlines[0]?.url ? await scrapePage(headlines[0].url) : null;
     const pages = page?.text ? [{ ...page, text: page.text.slice(0, 900) }] : [];
     return { headlines, pages };

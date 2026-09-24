@@ -1239,16 +1239,7 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   flex-direction: column;
   gap: 14px;
   position: relative;
-  padding: 4px 2px 16px 28px;
-}
-.news-thread::before {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: 18px;
-  bottom: 18px;
-  width: 1px;
-  background: var(--line-bright);
+  padding: 4px 2px 16px;
 }
 .news-bubble {
   width: 100%;
@@ -1258,41 +1249,29 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   background: var(--bg-elev);
   animation: news-in 0.35s ease;
 }
-.news-bubble::before {
-  content: "";
-  position: absolute;
-  left: -24px;
-  top: 16px;
-  width: 9px;
-  height: 9px;
-  background: var(--bg);
-  border: 2px solid var(--accent);
-}
-.news-bubble.live { border-color: var(--line-bright); }
-.news-bubble.wait { background: transparent; color: var(--muted); }
+.news-bubble.live { border-color: var(--line-bright); background: var(--bg-elev); }
 .news-bubble header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 8px; font: 600 var(--fs-kicker)/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
 .news-bubble header .up { color: var(--up); }
 .news-bubble header .down { color: var(--down); }
 .news-bubble p { margin: 0; }
-.news-say { margin-top: 10px; color: var(--text); }
+.news-say { margin: 0 0 10px; color: var(--text); }
+.news-say b { font-weight: 650; }
 .news-caret { display: inline-block; width: 7px; height: 1em; margin-left: 2px; background: var(--accent); vertical-align: text-bottom; animation: pulse-dot 1s steps(1) infinite; }
-.news-cards { display: flex; flex-direction: column; gap: 8px; }
+.news-cards { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .news-card {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 12px;
+  flex: 0 0 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px;
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--text);
 }
-.news-card.solo { grid-template-columns: 1fr; }
 .news-card:hover { border-color: var(--line-bright); background: var(--bg-hover); }
-.news-card img {
-  width: 160px;
+.news-card img, .news-shot {
+  width: 100%;
   height: 100px;
-  min-width: 160px;
-  max-width: 160px;
   min-height: 100px;
   max-height: 100px;
   object-fit: cover;
