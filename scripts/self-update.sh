@@ -49,6 +49,50 @@ fail_status() {
 }
 trap 'fail_status $?' EXIT
 
+LOCK="$PREFIX/var/update.lock"
+if [[ -f "$LOCK" ]]; then
+  oldpid="$(cat "$LOCK" 2>/dev/null || true)"
+  if [[ -n "$oldpid" ]] && kill -0 "$oldpid" 2>/dev/null; then
+    echo "[self-update] another update is already running (pid $oldpid)"
+    exit 1
+  fi
+fi
+echo $$ >"$LOCK"
+
+stop_for_update() {
+  if [[ "$os" == "darwin" ]] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/com.xtrader.app" 2>/dev/null || true
+  fi
+  if command -v systemctl >/dev/null 2>&1 \
+    && [[ -f "$HOME/.config/systemd/user/xtrader.service" ]]; then
+    systemctl --user stop xtrader 2>/dev/null || true
+  fi
+  if [[ -f "$PREFIX/var/xtrader.pid" ]]; then
+    local pid
+    pid="$(cat "$PREFIX/var/xtrader.pid" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  fi
+  sleep 1
+}
+
+wipe_install() {
+  local attempt leftover
+  for attempt in 1 2 3 4 5; do
+    find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name var ! -name .env ! -name runtime -exec rm -rf {} + || true
+    leftover="$(find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name var ! -name .env ! -name runtime -print || true)"
+    if [[ -z "$leftover" ]]; then
+      return 0
+    fi
+    echo "[self-update] retrying remove ($attempt)"
+    sleep 1
+  done
+  echo "[self-update] could not remove old files:" >&2
+  echo "$leftover" >&2
+  return 1
+}
+
 echo "[self-update] prefix=$PREFIX platform=$platform version=$VERSION"
 write_status "downloading" "Starting download" "0"
 
@@ -62,7 +106,7 @@ else
 fi
 
 tmp="$(mktemp -d)"
-trap 'code=$?; rm -rf "$tmp"; fail_status "$code"' EXIT
+trap 'code=$?; rm -f "$LOCK"; rm -rf "$tmp"; fail_status "$code"' EXIT
 
 if ! command -v curl >/dev/null; then
   echo "curl is required"; exit 1
@@ -94,16 +138,21 @@ if ! wait "$curl_pid"; then
   echo "Failed to download $url"
   exit 1
 fi
-write_status "extracting" "Replacing app files" "100"
+write_status "extracting" "Stopping app and replacing files" "100"
+echo "[self-update] stopping app before replacing files"
+stop_for_update
 
 mkdir -p "$PREFIX/var"
 if [[ -f "$PREFIX/.env" ]]; then
   cp "$PREFIX/.env" "$tmp/dotenv.bak"
 fi
 
-# Replace app files; keep var/ and .env
-find "$PREFIX" -mindepth 1 -maxdepth 1 ! -name var ! -name .env -exec rm -rf {} +
+wipe_install
 tar -xzf "$tmp/xtrader.tgz" -C "$PREFIX"
+if [[ ! -f "$PREFIX/apps/api/dist/cli.js" ]]; then
+  echo "[self-update] extract did not include apps/api/dist/cli.js" >&2
+  exit 1
+fi
 
 if [[ -f "$tmp/dotenv.bak" ]]; then
   mv "$tmp/dotenv.bak" "$PREFIX/.env"
@@ -166,9 +215,14 @@ if [[ "$os" == "linux" ]] && command -v systemctl >/dev/null; then
   fi
 elif [[ "$os" == "darwin" ]]; then
   uid="$(id -u)"
-  if launchctl kickstart -k "gui/${uid}/com.xtrader.app" 2>/dev/null; then
-    restarted=1
-    echo "[self-update] kickstarted launchd com.xtrader.app"
+  plist="$HOME/Library/LaunchAgents/com.xtrader.app.plist"
+  label="gui/${uid}/com.xtrader.app"
+  if [[ -f "$plist" ]]; then
+    launchctl bootstrap "gui/${uid}" "$plist" 2>/dev/null || true
+    if launchctl kickstart -k "$label" 2>/dev/null; then
+      restarted=1
+      echo "[self-update] kickstarted launchd com.xtrader.app"
+    fi
   fi
 fi
 
@@ -180,5 +234,6 @@ fi
 
 echo "[self-update] done"
 write_status "done" "Updated" "100"
+rm -f "$LOCK"
 trap - EXIT
 rm -rf "$tmp"

@@ -143,7 +143,37 @@ case "$command" in
       exit 1
     fi
     ;;
-  update|uninstall|session)
+  update)
+    export XTRADER_HOME="$ROOT"
+    export XTRADER_REPO="${XTRADER_REPO:-that-rookie-dev/x-trader}"
+    script="$ROOT/scripts/self-update.sh"
+    mkdir -p "$ROOT/scripts" "$ROOT/var"
+    if [[ ! -f "$script" ]]; then
+      echo "Install is incomplete. Downloading the updater…"
+      curl -fsSL "https://raw.githubusercontent.com/${XTRADER_REPO}/main/scripts/self-update.sh" -o "$script"
+      chmod +x "$script"
+    fi
+    version="latest"
+    if [[ -n "${1:-}" ]]; then
+      version="$1"
+    fi
+    exec bash "$script" --restart --version "$version"
+    ;;
+  uninstall)
+    script="$ROOT/uninstall.sh"
+    [[ -f "$script" ]] || script="$ROOT/scripts/uninstall.sh"
+    if [[ ! -f "$script" ]]; then
+      echo "uninstall.sh is missing from this install." >&2
+      exit 1
+    fi
+    export XTRADER_HOME="$ROOT"
+    exec bash "$script"
+    ;;
+  session)
+    if [[ ! -f "$ROOT/apps/api/dist/cli.js" ]]; then
+      echo "Install is incomplete. Run: xtrader update" >&2
+      exit 1
+    fi
     exec "$RUNTIME" "$command" "$@"
     ;;
   help|--help|-h)
