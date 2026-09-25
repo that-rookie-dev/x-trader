@@ -61,7 +61,7 @@ export function horizonTarget(now: Date, id: HorizonId): { at: Date; clamped: bo
   return { at, clamped: false, label: `by ${clockLabel(at)}` };
 }
 
-/** Walk the spot from the live price toward the EOD forecast in proportion to time left. */
+/** Expected price at this horizon. A Brownian bridge: the Algo or AI cash-close call is the terminal value, and the price expected along the way is the straight path from the live print to that close. The band still widens with the square root of time. */
 export function horizonSpot(input: {
   last: number;
   eodClose: number;
@@ -82,15 +82,6 @@ function signMove(last: number, close: number): number {
   if (close >= last + dead) return 1;
   if (close <= last - dead) return -1;
   return 0;
-}
-
-const SHORT = new Set<HorizonId>(["5m", "15m"]);
-
-/** Short clocks follow VWAP, so they can disagree with the news-bearing close. */
-function tapeClose(last: number, vwap: number | null | undefined, minutes: number): number {
-  const anchor = vwap != null && vwap > 0 ? vwap : last;
-  const pull = Math.min(1, Math.max(0, minutes) / 30);
-  return last + (anchor - last) * pull;
 }
 
 export function buildHorizons(input: {
@@ -119,8 +110,7 @@ export function buildHorizons(input: {
       minutesToTarget: target.clamped ? minutesToClose : minutesToTarget,
       minutesToClose,
     });
-    const tape = tapeClose(input.last, input.vwap, target.clamped ? minutesToClose : minutesToTarget);
-    const close = SHORT.has(id) ? tape : id === "30m" ? (tape + towardClose.close) / 2 : towardClose.close;
+    const close = towardClose.close;
     const band = Math.max(Math.abs(towardClose.high - towardClose.low) / 2, input.last * 0.001);
     const spot = { close, low: close - band, high: close + band };
     return { id, target, spot, date };

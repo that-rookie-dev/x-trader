@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { clientOptionPnl, clientOptionPnlShort, shortOptionMargin } from "@/lib/charges";
 import type { AgentMark, ChainLeg, OptionsBoard, QuoteTick } from "@/lib/desk";
 import { showCompactRupee, showDec, showPct, showRupee, showSignedRupee } from "@/lib/format";
-import { applyHorizon, applyLiveQuotes, applyTickCandle, horizonCloseNow, mergeCandles, quotesFromBoard } from "@/lib/live";
+import { applyHorizon, applyLiveQuotes, applyTickCandle, mergeCandles, quotesFromBoard } from "@/lib/live";
 import { readSse } from "@/lib/sse";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -413,14 +413,8 @@ export default function OptionsPage() {
     }
   }
 
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setClock(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
   const vs = vsView(board?.compare);
-  const marks = useMemo(() => chartLines(board, horizon, clock), [board?.lastPrice, board?.eod?.close, horizon?.id, horizon?.targetAt, clock]);
+  const marks = useMemo(() => chartLines(board, horizon), [board?.lastPrice, board?.eod?.close, horizon?.id, horizon?.close, horizon?.targetAt]);
   const book = useMemo(() => liveBuyBook(openBuys, board), [openBuys, board]);
 
   const actualClose =
@@ -1075,19 +1069,17 @@ function PnlBox({
 function chartLines(
   board: OptionsBoard | null,
   horizon: NonNullable<OptionsBoard["horizons"]>[number] | null,
-  now: number,
 ): ChartLine[] {
   if (!board) return [];
   const last = Number(board.lastPrice);
   const lines: ChartLine[] = [];
   if (Number.isFinite(last) && last > 0) lines.push({ price: last, title: "MKT", color: "#e7edf5" });
   const eodClose = Number(board.eod?.close);
-  const anchor = Number(horizon?.anchor);
-  const predicted = horizon && Number.isFinite(anchor)
-    ? Number(horizon.close) + (last - anchor)
-    : horizon?.targetAt && Number.isFinite(eodClose)
-      ? horizonCloseNow({ last, eodClose, targetAt: horizon.targetAt, now })
-      : eodClose;
+  const predicted = horizon
+    ? Number(horizon.close)
+    : Number.isFinite(eodClose)
+      ? eodClose
+      : NaN;
   if (Number.isFinite(predicted) && predicted > 0) {
     lines.push({ price: predicted, title: horizon?.label ?? "EOD", color: "#4c8dff" });
   }

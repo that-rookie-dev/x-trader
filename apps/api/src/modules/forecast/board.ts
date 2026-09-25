@@ -258,18 +258,11 @@ export async function buildOptionsBoard(
     const cost = Number(leg.pnl.buyNotional);
     return cost > 0 ? Number(leg.pnl.net) / cost : 0;
   };
-  const wantSide =
-    activeClose <= liveSpot - Math.max(liveSpot * 0.0006, 8)
-      ? ("PE" as const)
-      : activeClose >= liveSpot + Math.max(liveSpot * 0.0006, 8)
-        ? ("CE" as const)
-        : null;
   const buyScore = (item: (typeof ranked)[number]) => {
     const r = roi(item.leg);
-    const sideBoost = wantSide == null ? 0 : wantSide === item.kind ? 0.08 : -0.04;
     const near = 1 - Math.min(1, Math.abs(item.strike - liveSpot) / Math.max(liveSpot * 0.02, 1));
     const net = Number(item.leg.pnl?.net ?? 0);
-    return r * 10 + sideBoost + near * 0.05 + Math.min(Math.max(net, 0), 5000) / 5000;
+    return r * 10 + near * 0.05 + Math.min(Math.max(net, 0), 5000) / 5000;
   };
   const buys = ranked
     .filter((item) => item.leg.mark === "BUY")

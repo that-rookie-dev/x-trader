@@ -18,6 +18,9 @@ export function HorizonCompareCard() {
   const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>("5m");
   const [symbol, setSymbol] = useState("");
   const [compare, setCompare] = useState<Compare | null>(null);
+  const [showAlgo, setShowAlgo] = useState(true);
+  const [showAi, setShowAi] = useState(true);
+  const [candles, setCandles] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,14 +71,21 @@ export function HorizonCompareCard() {
         </div>
         <div className="compare-key">
           <i className="mkt" /> Market
-          <i className="algo" /> Algo
-          <i className="ai" /> AI
+          <button type="button" className={showAlgo ? "on" : ""} onClick={() => setShowAlgo((on) => !on)}>
+            <i className="algo" /> Algo
+          </button>
+          <button type="button" className={showAi ? "on" : ""} onClick={() => setShowAi((on) => !on)}>
+            <i className="ai" /> AI
+          </button>
+          <button type="button" className={candles ? "on" : ""} onClick={() => setCandles((on) => !on)}>
+            {candles ? "Candles" : "Line"}
+          </button>
         </div>
       </div>
       <p className="muted compare-note">
-        Market is the live price on each quote. Algo and AI are the horizon price named on that same quote. A minute of quotes is written together.
+        Market is the price that printed. Algo and AI are the model price for that horizon, drawn on the minute it was aimed at.
       </p>
-      <HorizonCompare points={compare?.points ?? []} />
+      <HorizonCompare points={compare?.points ?? []} horizon={horizon} showAlgo={showAlgo} showAi={showAi} candles={candles} />
     </div>
   );
 }

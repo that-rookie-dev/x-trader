@@ -439,8 +439,8 @@ export function eodTradeView(input: {
       `${sideNow} ${input.kind}`,
       `net ₹${pnl.net} if close ~${money(input.eodSpot, 2)}`,
     ];
-    if (want && want !== input.kind) bits.push(`against ${want} lean`);
-    else if (want === input.kind) bits.push(`${want} lean`);
+    if (want && want !== input.kind) bits.push("other side also priced");
+    else if (want === input.kind) bits.push("same side as the close");
     else bits.push("flat tape");
     if (!cheap) bits.push("ITM premium");
     else if (!inPlay) bits.push("wide of EOD path");
@@ -453,7 +453,7 @@ export function eodTradeView(input: {
     mark = "WAIT";
     why = "Waiting for a clearer EOD close.";
   } else if (want && want !== input.kind) {
-    why = `Index leans ${want}. This ${input.kind} is not expected to pay after charges (buy net ₹${pnl.net}).`;
+    why = `Buy net ₹${pnl.net} does not cover charges.`;
   } else if (!cheap) {
     why = `${sideNow} ${input.kind} — buy net ₹${pnl.net} under ₹${floor} floor.`;
   } else if (!inPlay) {

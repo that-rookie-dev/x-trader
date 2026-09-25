@@ -20,7 +20,8 @@ describe("paper autopilot loss limits", () => {
     expect(shouldCutLong({ entry: 100, last: 74, unrealised: -100, mark: "BUY", cutoff: false })).toBe("PREMIUM_STOP");
     expect(shouldCutLong({ entry: 100, last: 90, unrealised: -2000, mark: "BUY", cutoff: false })).toBe("RUPEE_STOP");
     expect(shouldCutLong({ entry: 100, last: 110, unrealised: 200, mark: "NO_BUY", cutoff: false })).toBe("MARK_LEFT");
-    expect(shouldCutLong({ entry: 100, last: 110, unrealised: 200, mark: "BUY", cutoff: false })).toBeNull();
+    expect(shouldCutLong({ entry: 100, last: 96, unrealised: -40, mark: "BUY", cutoff: false, forecastExit: 95 })).toBe("EARLY_LOSS");
+    expect(shouldCutLong({ entry: 100, last: 96, unrealised: -40, mark: "BUY", cutoff: false, forecastExit: 110 })).toBeNull();
     expect(
       shouldCutLong({
         entry: 100,

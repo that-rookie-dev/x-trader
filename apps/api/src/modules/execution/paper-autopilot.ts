@@ -39,12 +39,15 @@ export function shouldCutLong(input: {
   last: number;
   unrealised: number;
   mark?: string | null;
+  /** Premium the forecast now expects. A loser exits when this no longer clears the entry. */
+  forecastExit?: number | null;
   cutoff: boolean;
   targetAt?: string | null;
   now?: Date;
 }): string | null {
   if (input.cutoff) return "SESSION_CUTOFF";
   if (input.targetAt && (input.now ?? new Date()).getTime() >= new Date(input.targetAt).getTime()) return "HORIZON";
+  if (input.unrealised < 0 && input.forecastExit != null && input.forecastExit <= input.entry) return "EARLY_LOSS";
   if (input.entry > 0 && input.last > 0 && input.last <= input.entry * PAPER_PREMIUM_STOP) return "PREMIUM_STOP";
   if (input.unrealised <= -PAPER_RUPEE_STOP) return "RUPEE_STOP";
   if (input.mark != null && input.mark !== "BUY") return "MARK_LEFT";
@@ -240,10 +243,10 @@ export class PaperAutopilot {
       meta?: unknown;
     }>,
   ): Promise<void> {
-    const bySym = new Map<string, { mark: string; lastPrice: string | null }>();
+    const bySym = new Map<string, { mark: string; lastPrice: string | null; eodPremium: string | null }>();
     for (const row of board.rows) {
       for (const leg of [row.ce, row.pe]) {
-        if (leg) bySym.set(leg.symbol.toUpperCase(), { mark: leg.mark, lastPrice: leg.lastPrice });
+        if (leg) bySym.set(leg.symbol.toUpperCase(), { mark: leg.mark, lastPrice: leg.lastPrice, eodPremium: leg.eodPremium ?? null });
       }
     }
     const clock = board.desk?.clock ?? "";
@@ -269,6 +272,7 @@ export class PaperAutopilot {
         last,
         unrealised: Number(pos.unrealisedPnl ?? 0),
         mark: leg?.mark,
+        forecastExit: leg?.eodPremium != null ? Number(leg.eodPremium) : null,
         cutoff,
         targetAt: pred?.targetAt ?? null,
       });

@@ -44,7 +44,7 @@ describe("horizons", () => {
     expect(five.label).not.toBe("EOD");
   });
 
-  it("abstains when the short tape and the hour path point opposite ways", () => {
+  it("keeps every horizon on the model close, and still abstains a vetoed 15m", () => {
     const rows = buildHorizons({
       now: morning,
       last: 1000,
@@ -52,9 +52,14 @@ describe("horizons", () => {
       eodLow: 990,
       eodHigh: 1120,
       vwap: 900,
+      veto: true,
     });
-    expect(rows.find((row) => row.id === "5m")!.abstain).toBe(true);
+    const five = Number(rows.find((row) => row.id === "5m")!.close);
+    const hour = Number(rows.find((row) => row.id === "1h")!.close);
+    expect(five).toBeGreaterThan(1000);
+    expect(hour).toBeGreaterThan(five);
+    expect(rows.find((row) => row.id === "5m")!.abstain).toBe(false);
+    expect(rows.find((row) => row.id === "15m")!.abstain).toBe(true);
     expect(rows.find((row) => row.id === "1h")!.abstain).toBe(false);
-    expect(rows.find((row) => row.id === "15m")!.label.startsWith("by ")).toBe(true);
   });
 });

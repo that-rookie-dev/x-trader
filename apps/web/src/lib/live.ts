@@ -220,15 +220,15 @@ function repriceLeg(
   } else if (net >= gates.netFloor) {
     mark = "BUY";
     const bits = [`${sideNow} ${kind}`, `net ₹${pnl.net} if close ~${money(eodSpot)}`];
-    if (want && want !== kind) bits.push(`against ${want} lean`);
-    else if (want === kind) bits.push(`${want} lean`);
+    if (want && want !== kind) bits.push("other side also priced");
+    else if (want === kind) bits.push("same side as the close");
     else bits.push("flat tape");
     if (!cheap) bits.push("ITM premium");
     else if (!inPlay) bits.push("wide of EOD path");
     why = bits.join(" · ");
   } else {
     mark = "NO_BUY";
-    if (want && want !== kind) why = `Index leans ${want}. This ${kind} is not expected to pay after charges (buy net ₹${pnl.net}).`;
+    if (want && want !== kind) why = `Buy net ₹${pnl.net} does not cover charges.`;
     else why = "Expected EOD move does not cover charges.";
   }
   if (!heldSide && gates.cutoff) {
@@ -258,23 +258,19 @@ function repriceLeg(
 
 function rebuildBuys(board: OptionsBoard, eodClose: string): OptionsBoard["buys"] {
   const liveSpot = Number(board.lastPrice);
-  const eodSpot = Number(eodClose);
   const ranked = board.rows.flatMap((row) => [
     row.ce ? { kind: "CE" as const, strike: row.strike, leg: row.ce } : null,
     row.pe ? { kind: "PE" as const, strike: row.strike, leg: row.pe } : null,
   ]).filter((item): item is { kind: "CE" | "PE"; strike: number; leg: ChainLeg } => Boolean(item));
-  const wantSide =
-    eodSpot <= liveSpot - Math.max(liveSpot * 0.0006, 8) ? ("PE" as const) : eodSpot >= liveSpot + Math.max(liveSpot * 0.0006, 8) ? ("CE" as const) : null;
   const roi = (leg: ChainLeg) => {
     const cost = Number(leg.pnl?.buyNotional ?? 0);
     return cost > 0 ? Number(leg.pnl?.net ?? 0) / cost : 0;
   };
   const buyScore = (item: { kind: "CE" | "PE"; strike: number; leg: ChainLeg }) => {
     const r = roi(item.leg);
-    const sideBoost = wantSide == null ? 0 : wantSide === item.kind ? 0.08 : -0.04;
     const near = 1 - Math.min(1, Math.abs(item.strike - liveSpot) / Math.max(liveSpot * 0.02, 1));
     const net = Number(item.leg.pnl?.net ?? 0);
-    return r * 10 + sideBoost + near * 0.05 + Math.min(Math.max(net, 0), 5000) / 5000;
+    return r * 10 + near * 0.05 + Math.min(Math.max(net, 0), 5000) / 5000;
   };
   return ranked
     .filter((item) => item.leg.mark === "BUY")
@@ -386,22 +382,6 @@ export function applyHorizon(board: OptionsBoard, id: string): OptionsBoard {
   };
 }
 
-/** Live horizon price: walk from the current print toward the EOD close, by seconds left. */
-export function horizonCloseNow(input: {
-  last: number;
-  eodClose: number;
-  targetAt: string;
-  now?: number;
-}): number {
-  const now = input.now ?? Date.now();
-  const ist = new Date(now + 5.5 * 60 * 60 * 1000);
-  const close = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 10, 0, 0);
-  const secondsToClose = Math.max(1, (close - now) / 1000);
-  const secondsToTarget = Math.max(0, (Date.parse(input.targetAt) - now) / 1000);
-  const frac = Math.min(1, secondsToTarget / secondsToClose);
-  return input.last + (input.eodClose - input.last) * frac;
-}
-
 export function quotesFromBoard(board: OptionsBoard): QuoteTick[] {
   const out: QuoteTick[] = [
     {
@@ -474,7 +454,6 @@ function projectHorizons(board: OptionsBoard, last: number): OptionsBoard["horiz
   const eodClose = useAi ? aiClose : algoClose;
   const eodLow = Number(useAi ? (board.eodAi?.low ?? eod.low) : eod.low);
   const eodHigh = Number(useAi ? (board.eodAi?.high ?? eod.high) : eod.high);
-  const vwap = board.desk?.vwap != null ? Number(board.desk.vwap) : null;
   const now = new Date();
   const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
   const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
@@ -491,11 +470,7 @@ function projectHorizons(board: OptionsBoard, last: number): OptionsBoard["horiz
     const minutesToTarget = clamped || row.id === "eod" ? minutesToClose : Math.max(0, Math.round((at - now.getTime()) / 60000));
     const span = Math.max(minutesToClose, 1);
     const frac = Math.min(1, Math.max(0, minutesToTarget) / span);
-    const toward = last + (eodClose - last) * frac;
-    const anchor = vwap != null && vwap > 0 ? vwap : last;
-    const pull = Math.min(1, Math.max(0, minutesToTarget) / 30);
-    const tape = last + (anchor - last) * pull;
-    const close = row.id === "5m" || row.id === "15m" ? tape : row.id === "30m" ? (tape + toward) / 2 : toward;
+    const close = last + (eodClose - last) * frac;
     const label =
       row.id === "eod" || clamped
         ? "EOD"
