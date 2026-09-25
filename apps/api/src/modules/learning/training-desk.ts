@@ -111,7 +111,7 @@ export class TrainingDesk {
       total: t,
       pct,
     };
-    this.state.message = `${this.state.progress.label} · ${d}/${t} (${pct}%)`;
+    this.state.message = `${this.state.progress.label} · ${d}/${t} (${pct.toFixed(3)}%)`;
     this.state.lastTickAt = new Date().toISOString();
   }
 

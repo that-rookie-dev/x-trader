@@ -1,6 +1,7 @@
 "use client";
 
 import { api } from "@/lib/api";
+import { showDec } from "@/lib/format";
 import { useEffect, useState } from "react";
 
 type UpdateStatus = {
@@ -85,7 +86,7 @@ export function UpdateBanner() {
         <span className="update-meter" aria-hidden>
           <i style={{ width: `${Math.max(8, Math.min(100, pct))}%` }} />
         </span>
-        <span className="mono update-pct">{pct > 0 ? `${pct}%` : ""}</span>
+        <span className="mono update-pct">{pct > 0 ? `${showDec(pct, 3)}%` : ""}</span>
       </div>
     );
   }

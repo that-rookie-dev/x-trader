@@ -121,7 +121,7 @@ export default function TrainingPage() {
       <div className="card train-progress-card">
         <div className="section-head">
           <h2>Cycle progress</h2>
-          <span className="mono">{live?.progress?.pct ?? 0}%</span>
+          <span className="mono">{showDec(live?.progress?.pct ?? 0, 3)}%</span>
         </div>
         <div className="train-progress" role="progressbar" aria-valuenow={live?.progress?.pct ?? 0} aria-valuemin={0} aria-valuemax={100}>
           <div className="train-progress-fill" style={{ width: `${Math.min(100, Math.max(0, live?.progress?.pct ?? 0))}%` }} />
@@ -221,7 +221,7 @@ export default function TrainingPage() {
                   <li key={`${ev.at}-${ev.symbol}-${i}`}>
                     <span className="mono">{ago(ev.at)}</span>{" "}
                     <strong>{ev.symbol}</strong> {ev.tuned ? "tuned" : "skip"} · {ev.reason}
-                    {ev.mae != null ? ` · MAE ${showDec(ev.mae, 2)}%` : ""}
+                    {ev.mae != null ? ` · MAE ${showDec(ev.mae, 3)}%` : ""}
                   </li>
                 ))}
               </ul>
@@ -261,9 +261,9 @@ export default function TrainingPage() {
                   <td className="mono">{row.predictions}</td>
                   <td className="mono">{row.resolved}</td>
                   <td className="mono">{row.open}</td>
-                  <td className="mono">{row.mae != null ? `${showDec(row.mae, 2)}%` : "—"}</td>
-                  <td className="mono">{row.algoMae != null ? `${showDec(row.algoMae, 2)}%` : "—"}</td>
-                  <td className="mono">{row.aiMae != null ? `${showDec(row.aiMae, 2)}%` : "—"}</td>
+                  <td className="mono">{row.mae != null ? `${showDec(row.mae, 3)}%` : "—"}</td>
+                  <td className="mono">{row.algoMae != null ? `${showDec(row.algoMae, 3)}%` : "—"}</td>
+                  <td className="mono">{row.aiMae != null ? `${showDec(row.aiMae, 3)}%` : "—"}</td>
                   <td className="mono">
                     {row.algoDeltaKeys}/{row.aiDeltaKeys}
                   </td>

@@ -205,7 +205,7 @@ export function compareEod(algoClose: number, aiClose: number, algoBias: Forecas
     : rel <= 0.004
       ? "MIXED"
       : "OPPOSED";
-  const gap = `${(rel * 100).toFixed(2)}% apart`;
+  const gap = `${(rel * 100).toFixed(3)}% apart`;
   const hint =
     tag === "ALIGNED"
       ? `same direction · ${gap}`

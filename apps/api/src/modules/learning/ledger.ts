@@ -302,7 +302,7 @@ export class PredictionLedger {
     if (!rows.length) return "No resolved prediction history yet.";
     return rows
       .map((r) => {
-        const err = r.errorPct != null ? `${Number(r.errorPct).toFixed(2)}%` : "?";
+        const err = r.errorPct != null ? `${Number(r.errorPct).toFixed(3)}%` : "?";
         const hit = r.directionHit == null ? "n/a" : r.directionHit ? "hit" : "miss";
         return `${r.sessionDate} ${r.kind}: pred ${r.predictedClose} actual ${r.actualClose} err ${err} dir ${hit}`;
       })

@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 function signedErrPct(predicted: number | null | undefined, actual: number | null | undefined): string | null {
   if (predicted == null || actual == null || !(Math.abs(predicted) > 0)) return null;
   const pct = ((actual - predicted) / predicted) * 100;
-  return `${pct >= 0 ? "+" : ""}${showDec(pct, 2)}%`;
+  return `${pct >= 0 ? "+" : ""}${showDec(pct, 3)}%`;
 }
 
 function premiumErrPct(ltp: string | null | undefined, eod: string | null | undefined): number | null {
@@ -664,7 +664,7 @@ function LegCells({
   const base = `${side.toLowerCase()}-cell ${tone}`;
   const net = leg?.pnl ? Number(leg.pnl.net) : null;
   const err = showErr ? premiumErrPct(leg?.lastPrice, leg?.eodPremium) : null;
-  const errSigned = err != null ? `${err >= 0 ? "+" : ""}${showDec(err, 1)}%` : null;
+  const errSigned = err != null ? `${err >= 0 ? "+" : ""}${showDec(err, 3)}%` : null;
 
   const cell = (extra: string, content: ReactNode, edge?: "start" | "end", title?: string) => (
     <td

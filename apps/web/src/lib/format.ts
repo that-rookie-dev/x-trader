@@ -39,7 +39,7 @@ export function showSignedRupee(value: string | number | null | undefined, place
   return `${sign}₹${showDec(Math.abs(n), places)}`;
 }
 
-export function showPct(value: number, places = 1): string {
+export function showPct(value: number, places = 3): string {
   if (!Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : value < 0 ? "-" : "";
   return `${sign}${showDec(Math.abs(value), places)}%`;

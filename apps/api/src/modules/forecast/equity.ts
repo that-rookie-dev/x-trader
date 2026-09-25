@@ -111,7 +111,7 @@ export function scoreEquity(input: {
   }
   const whyBits = [
     mom != null ? `12-1 ${(mom * 100).toFixed(1)}` : null,
-    rs != null ? `RS vs Nifty ${(rs * 100).toFixed(1)}%` : null,
+    rs != null ? `RS vs Nifty ${(rs * 100).toFixed(3)}%` : null,
     above200 ? "above SMA200" : above50 ? "above SMA50" : "below SMAs",
     donchianBreak ? "Donchian 20 break" : null,
     stop && target ? `stop ${stop} / tgt ${target}` : null,

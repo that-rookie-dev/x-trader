@@ -111,7 +111,7 @@ export async function snapshotVol(
 export function volWhy(vol: VolSnapshot): string[] {
   const lines: string[] = [];
   if (vol.ivAtm != null && vol.hv20 != null) {
-    lines.push(`IV ${money(vol.ivAtm * 100, 1)}% vs HV20 ${money(vol.hv20 * 100, 1)}%`);
+    lines.push(`IV ${money(vol.ivAtm * 100, 3)}% vs HV20 ${money(vol.hv20 * 100, 3)}%`);
   }
   if (vol.ivRank != null) lines.push(`IV rank ${(vol.ivRank * 100).toFixed(0)}`);
   if (vol.rich) lines.push("Premium is rich vs realized vol — no new buy.");

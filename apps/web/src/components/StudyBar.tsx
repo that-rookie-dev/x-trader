@@ -3,6 +3,7 @@
 import { ExpiryPicker, type ExpiryOption } from "@/components/ExpiryPicker";
 import { NamePicker, type DeskName } from "@/components/NamePicker";
 import { VectorSpark } from "@/components/VectorSpark";
+import { showDec } from "@/lib/format";
 
 export type StudyVs = {
   tag: string;
@@ -84,11 +85,11 @@ export function StudyBar({
   const aiErrClass = errTone(predScore?.aiErr);
   const algoMae =
     learning?.algo?.mae != null && Number.isFinite(learning.algo.mae)
-      ? `${learning.algo.mae.toFixed(1)}%`
+      ? `${showDec(learning.algo.mae, 3)}%`
       : null;
   const aiMae =
     learning?.ai?.mae != null && Number.isFinite(learning.ai.mae)
-      ? `${learning.ai.mae.toFixed(1)}%`
+      ? `${showDec(learning.ai.mae, 3)}%`
       : null;
 
   return (
@@ -145,7 +146,7 @@ export function StudyBar({
             <em className={aiErrClass}>{predScore.aiErr}</em>
           ) : aiConfidence != null && dir ? (
             <em>
-              {aiConfidence}% {dir}
+              {showDec(aiConfidence, 3)}% {dir}
             </em>
           ) : aiMae ? (
             <em className="idle">MAE {aiMae}</em>
