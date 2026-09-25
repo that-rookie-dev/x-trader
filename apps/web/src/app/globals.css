@@ -504,6 +504,24 @@ h2 {
   padding: 20px; width: min(560px, 100%); max-height: 90vh; overflow: auto;
   box-shadow: none;
 }
+.click-row { cursor: pointer; }
+.click-row:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.close-result { font-size: 28px; font-weight: 650; letter-spacing: -0.03em; margin: 8px 0 16px; }
+.close-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+  margin: 0;
+}
+.close-grid div { min-width: 0; }
+.close-grid dt {
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.close-grid dd { margin: 4px 0 0; }
 label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
 .spacer { flex: 1; }
 .mkt-chip {

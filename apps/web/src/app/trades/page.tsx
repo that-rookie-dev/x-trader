@@ -2,7 +2,7 @@
 
 import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
-import { showDec, showRupee } from "@/lib/format";
+import { showDec, showRupee, showSignedRupee } from "@/lib/format";
 import { useEffect, useState } from "react";
 
 type Memory = { id: string; strategy: string; regime: string; sampleCount: number; wins: number; losses: number; expectancy?: string | null };
@@ -15,9 +15,13 @@ type PaperPos = {
   currentPrice?: string | null;
   unrealisedPnl?: string | null;
   realisedPnl?: string | null;
+  fees?: string | null;
+  direction?: string;
   status: string;
-  meta?: Record<string, unknown>;
+  meta?: { prediction?: { eodPremium?: string | null; why?: string | null }; kind?: string; source?: string };
   closeReason?: string | null;
+  openedAt?: string | null;
+  closedAt?: string | null;
 };
 
 type Desk = {
@@ -65,6 +69,7 @@ type Desk = {
 export default function TradesPage() {
   const [desk, setDesk] = useState<Desk | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<PaperPos | null>(null);
 
   async function load() {
     try {
@@ -200,9 +205,9 @@ export default function TradesPage() {
             </thead>
             <tbody>
               {paperClosed.map((row) => {
-                const pred = (row.meta?.prediction ?? {}) as { eodPremium?: string };
+                const pred = row.meta?.prediction ?? {};
                 return (
-                  <tr key={row.id}>
+                  <tr key={row.id} className="click-row" onClick={() => setPicked(row)}>
                     <td className="mono">{row.symbol}</td>
                     <td className="mono">{showDec(row.averageEntry)}</td>
                     <td className="mono" title={pred.eodPremium ? `Predicted EOD ${showDec(pred.eodPremium)}` : undefined}>
@@ -219,7 +224,92 @@ export default function TradesPage() {
           </table>
         )}
       </div>
+      {picked ? <CloseSheet row={picked} onClose={() => setPicked(null)} /> : null}
+    </div>
+  );
+}
 
+function CloseSheet({ row, onClose }: { row: PaperPos; onClose: () => void }) {
+  const qty = Number(row.quantity);
+  const entry = Number(row.averageEntry);
+  const exit = row.currentPrice != null ? Number(row.currentPrice) : null;
+  const fees = Number(row.fees ?? 0);
+  const long = (row.direction ?? "LONG") !== "SHORT";
+  const spent = Number.isFinite(entry) && Number.isFinite(qty) ? entry * qty : null;
+  const back = exit != null && Number.isFinite(exit) && Number.isFinite(qty) ? exit * qty : null;
+  const result = row.realisedPnl != null ? Number(row.realisedPnl) : null;
+  const when = (at?: string | null) =>
+    at
+      ? new Date(at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short" })
+      : "—";
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="modal" onClick={onClose}>
+      <div className="sheet close-sheet" role="dialog" aria-label={row.symbol} onClick={(e) => e.stopPropagation()}>
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">{long ? "CLOSED BUY" : "CLOSED SHORT"}</p>
+            <h2 className="mono">{row.symbol}</h2>
+          </div>
+          <button type="button" className="btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <p className={`close-result mono ${result != null && result >= 0 ? "up" : "down"}`}>
+          {result != null ? (result >= 0 ? "Profit " : "Loss ") + showSignedRupee(result) : "—"}
+        </p>
+        <dl className="close-grid">
+          <div>
+            <dt>Quantity</dt>
+            <dd className="mono">{Number.isFinite(qty) ? showDec(qty, 0) : "—"}</dd>
+          </div>
+          <div>
+            <dt>Entry</dt>
+            <dd className="mono">{Number.isFinite(entry) ? showDec(entry) : "—"}</dd>
+          </div>
+          <div>
+            <dt>Exit</dt>
+            <dd className="mono">{exit != null && Number.isFinite(exit) ? showDec(exit) : "—"}</dd>
+          </div>
+          <div>
+            <dt>{long ? "Spent" : "Credited"}</dt>
+            <dd className="mono">{spent != null ? showRupee(spent) : "—"}</dd>
+          </div>
+          <div>
+            <dt>{long ? "Got back" : "Bought back"}</dt>
+            <dd className="mono">{back != null ? showRupee(back) : "—"}</dd>
+          </div>
+          <div>
+            <dt>Charges</dt>
+            <dd className="mono">{showRupee(fees)}</dd>
+          </div>
+          <div>
+            <dt>Opened</dt>
+            <dd className="mono">{when(row.openedAt)}</dd>
+          </div>
+          <div>
+            <dt>Closed</dt>
+            <dd className="mono">{when(row.closedAt)}</dd>
+          </div>
+          <div>
+            <dt>Why</dt>
+            <dd>{row.closeReason ?? "—"}</dd>
+          </div>
+          {row.meta?.prediction?.eodPremium ? (
+            <div>
+              <dt>Predicted premium</dt>
+              <dd className="mono">{showDec(row.meta.prediction.eodPremium)}</dd>
+            </div>
+          ) : null}
+        </dl>
+        {row.meta?.prediction?.why ? <p className="muted">{row.meta.prediction.why}</p> : null}
+      </div>
     </div>
   );
 }
