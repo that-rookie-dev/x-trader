@@ -51,29 +51,29 @@ function liveBuyBook(buys: OpenBuy[], board: OptionsBoard | null): { lines: BuyL
 
 function OpenPnl({
   book,
-  error,
-  status,
+  cash,
+  notice,
 }: {
   book: { lines: BuyLine[]; total: number; marked: number };
-  error: string | null;
-  status: string | null;
+  cash: string | null;
+  notice: string | null;
 }) {
-  const tone = book.marked === 0 ? "" : book.total > 0 ? "up" : book.total < 0 ? "down" : "";
-  const detail =
-    error ??
-    status ??
-    (book.lines.length === 0
-      ? "No open buy"
-      : book.lines.length === 1
-        ? `${book.lines[0]?.symbol ?? ""} · ${showDec(book.lines[0]?.quantity, 0)} qty`
-        : `${book.lines.length} buys · ${book.marked} marked`);
+  const live = book.marked > 0;
+  const tone = !live ? "" : book.total > 0 ? "up" : book.total < 0 ? "down" : "";
+  const low = cash != null && Number(cash) < 500;
+  const figure = notice ?? (live ? showSignedRupee(book.total) : "No open buy");
   return (
-    <div className="ops-pnl" title="Live value of open paper buys. Each tick reprices the contract.">
-      <div className="ops-pnl-copy">
-        <span className="ops-pnl-kicker">OPEN P&L</span>
-        <span className={`ops-pnl-sub mono ${error ? "down" : ""}`}>{detail}</span>
-      </div>
-      <strong className={`ops-pnl-num mono ${tone}`}>{book.marked ? showSignedRupee(book.total) : "—"}</strong>
+    <div className="pnl-book" data-coach="votes">
+      <section className={`pnl-book-cell ${low ? "down" : ""}`} title="Paper wallet">
+        <span>WALLET</span>
+        <strong className="mono">
+          {cash != null && Number.isFinite(Number(cash)) ? `₹${Number(cash).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
+        </strong>
+      </section>
+      <section className={`pnl-book-cell ${tone}`} title="Live value of open paper buys. Each tick reprices the contract.">
+        <span>OPEN P&L</span>
+        <strong className={`mono ${live ? "" : "idle"}`}>{figure}</strong>
+      </section>
     </div>
   );
 }
@@ -113,6 +113,7 @@ export default function OptionsPage() {
   const [traceLlm, setTraceLlm] = useState("");
   const [traceStatus, setTraceStatus] = useState<string | null>(null);
   const [openBuys, setOpenBuys] = useState<OpenBuy[]>([]);
+  const [paperCash, setPaperCash] = useState<string | null>(null);
 
   useEffect(() => {
     void api<{ names: Name[]; desk?: { exchange: string; symbol: string; expiry: string | null } | null }>(
@@ -256,11 +257,13 @@ export default function OptionsPage() {
   useEffect(() => {
     let alive = true;
     const load = () => {
-      api<{ positions: Array<{ id: string; exchange: string; symbol: string; direction: string; quantity: string; averageEntry: string; currentPrice?: string | null }> }>(
-        "/api/paper",
-      )
+      api<{
+        cash?: string;
+        positions: Array<{ id: string; exchange: string; symbol: string; direction: string; quantity: string; averageEntry: string; currentPrice?: string | null }>;
+      }>("/api/paper")
         .then((state) => {
           if (!alive) return;
+          if (state.cash != null) setPaperCash(state.cash);
           setOpenBuys(
             state.positions
               .filter((row) => row.direction === "LONG")
@@ -469,10 +472,6 @@ export default function OptionsPage() {
         onClose={() => setTraceOpen(false)}
       />
 
-      <div className="ops-rail card" data-coach="votes">
-        <OpenPnl book={book} error={error} status={status} />
-      </div>
-
       <div className="desk-body">
         <div className="desk-main">
           <div className="card chain-wrap">
@@ -629,6 +628,9 @@ export default function OptionsPage() {
             mode={flowMode}
             onMode={setFlowMode}
             board={board}
+            book={book}
+            cash={paperCash}
+            notice={error ?? status}
             onBusy={setStatus}
           />
         ) : (
@@ -724,6 +726,9 @@ function PnlBox({
   mode,
   onMode,
   board,
+  book,
+  cash,
+  notice,
   onBusy,
 }: {
   leg: ChainLeg;
@@ -733,6 +738,9 @@ function PnlBox({
   mode: "BUY" | "SELL";
   onMode: (mode: "BUY" | "SELL") => void;
   board: OptionsBoard | null;
+  book: { lines: BuyLine[]; total: number; marked: number };
+  cash: string | null;
+  notice: string | null;
   onBusy: (msg: string | null) => void;
 }) {
   const [paperPos, setPaperPos] = useState<{ id: string; direction: string } | null>(null);
@@ -994,10 +1002,8 @@ function PnlBox({
           {actionLabel}
         </button>
       </div>
-      <p className="pnl-note muted">
-        {useShort ? "SELL mode — write now, buy back at EOD." : "BUY mode — buy now, sell at EOD."}{" "}
-        <span className="pnl-keys">Shift</span> toggle · <span className="pnl-keys">Enter</span> {actionLabel.toLowerCase()}.
-      </p>
+      <div className="pnl-rule" />
+      <OpenPnl book={book} cash={cash} notice={notice} />
     </aside>
   );
 }

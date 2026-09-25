@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { showDec } from "@/lib/format";
-import { sessionPhase, sessionPhaseLabel, type SessionPhase } from "@/lib/session";
+import { marketClock, type MarketClock } from "@/lib/session";
 import { Coach, readSeen, tourForPath } from "@/components/Coach";
 import { SetupCredentials } from "@/components/SetupCredentials";
 import { SetupLlm } from "@/components/SetupLlm";
@@ -52,8 +51,7 @@ type Bootstrap = {
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [theme, setTheme] = useState("dark");
-  const [clock, setClock] = useState("");
-  const [phase, setPhase] = useState<SessionPhase>("open");
+  const [clock, setClock] = useState<MarketClock | null>(null);
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tour, setTour] = useState<string | null>(null);
@@ -75,16 +73,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const tick = () => {
       const now = new Date();
-      setClock(
-        new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hourCycle: "h23",
-        }).format(now) + " IST",
-      );
-      setPhase(sessionPhase(now));
+      setClock(marketClock(now));
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -175,9 +164,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
       setError(e instanceof Error ? e.message : "prediction mode failed");
     }
   }
-
-  const paperCash = boot?.settings.paperCash;
-  const paperLow = paperCash != null && Number(paperCash) < 500;
 
   if (!boot && !error) {
     return (
@@ -270,24 +256,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span>Analysis terminal</span>
           </div>
           {boot?.settings.haltActive ? <span className="badge live">HALT</span> : null}
-          <span className={`badge mono ${paperLow ? "live" : "ok"}`} title="Paper training wallet">
-            ₹{paperCash != null ? showDec(paperCash, 0) : "—"}
-          </span>
-          <span
-            className={`badge session-phase ${phase === "closing" ? "closing" : phase === "closed" || phase === "preopen" ? "warn" : "ok"}`}
-            title={
-              phase === "closing"
-                ? "Last 15 minutes before 15:30 IST close"
-                : phase === "closed"
-                  ? "Market closed — no new entries"
-                  : phase === "preopen"
-                    ? "Before 09:15 IST open"
-                    : "Regular session until 15:30 IST"
-            }
-          >
-            {sessionPhaseLabel(phase)}
-          </span>
-          <span className={`ist ${phase === "closing" ? "ist-closing" : ""}`}>{clock}</span>
+          {clock ? (
+            <span className={`mkt-chip ${clock.phase}`} title={clock.title}>
+              <time>{clock.time}</time>
+              <span className="mkt-count">
+                {clock.label}
+                <b>{clock.remain}</b>
+              </span>
+            </span>
+          ) : null}
           <span className="spacer" />
           <div className="pred-mode" role="group" aria-label="Prediction mode">
             <button
