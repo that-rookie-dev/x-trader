@@ -150,6 +150,8 @@ export const appSettings = pgTable("app_settings", {
   liveTradingEnabled: boolean("live_trading_enabled").notNull().default(false),
   autonomousTradingEnabled: boolean("autonomous_trading_enabled").notNull().default(false),
   paperAutopilot: boolean("paper_autopilot").notNull().default(false),
+  autopilotExchange: text("autopilot_exchange"),
+  autopilotSymbol: text("autopilot_symbol"),
   activeOptionsExchange: text("active_options_exchange"),
   activeOptionsSymbol: text("active_options_symbol"),
   newsSlotMinutes: integer("news_slot_minutes").notNull().default(15),

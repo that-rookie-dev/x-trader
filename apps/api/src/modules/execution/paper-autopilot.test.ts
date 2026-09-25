@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickPaperBuy, shouldCutLong } from "./paper-autopilot.js";
+import { pickPaperBuy, shouldCutLong, windowScore } from "./paper-autopilot.js";
 
 describe("paper autopilot loss limits", () => {
   it("picks the buy with the highest positive edge and skips a fight with the AI", () => {
@@ -32,5 +32,12 @@ describe("paper autopilot loss limits", () => {
         now: new Date("2026-09-24T04:15:00.000Z"),
       }),
     ).toBe("HORIZON");
+  });
+
+  it("buys when the first three horizons show a profit, and skips a window that only loses", () => {
+    expect(windowScore([40, 120, 300])?.hold).toBe("30m");
+    expect(windowScore([80, 40, -10])?.hold).toBe("5m");
+    expect(windowScore([-20, -40, -10])).toBeNull();
+    expect(windowScore([20, null, null])).toBeNull();
   });
 });

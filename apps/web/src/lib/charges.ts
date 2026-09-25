@@ -64,6 +64,27 @@ export function clientOptionPnl(input: { entry: number; exit: number; qty: numbe
   };
 }
 
+/** SPAN + exposure blocked to sell one naked option. Same floors as the API copy. */
+export function shortOptionMargin(input: {
+  spot: number;
+  strike: number;
+  kind: "CE" | "PE";
+  qty: number;
+  index: boolean;
+  expiryDay?: boolean;
+}): number {
+  const spot = input.spot;
+  const qty = Math.max(1, Math.floor(input.qty));
+  if (!(spot > 0) || !(input.strike > 0)) return 0;
+  const otm = input.kind === "PE" ? Math.max(0, spot - input.strike) : Math.max(0, input.strike - spot);
+  const scan = input.index ? 0.093 : 0.142;
+  const deep = otm / spot > 0.1;
+  let exposure = input.index ? (deep ? 0.03 : 0.02) : 0.035;
+  if (input.index && input.expiryDay) exposure += 0.02;
+  const span = Math.max(scan * spot - otm, 0);
+  return (span + exposure * spot) * qty;
+}
+
 /** Sell now, buy back at exit (short / write). exerciseIntrinsic adds writer STT when the option expires ITM. */
 export function clientOptionPnlShort(input: { entry: number; exit: number; qty: number; exerciseIntrinsic?: number }): OptionPnl {
   const qty = Math.max(1, Math.floor(input.qty));

@@ -467,6 +467,8 @@ export async function applySchema(client: SqlClient): Promise<void> {
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS kite_api_secret_enc jsonb;
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS kite_configured_at timestamptz;
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS paper_autopilot boolean NOT NULL DEFAULT false;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS autopilot_exchange text;
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS autopilot_symbol text;
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS prediction_mode text NOT NULL DEFAULT 'ALGO';
     ALTER TABLE positions ADD COLUMN IF NOT EXISTS meta jsonb NOT NULL DEFAULT '{}'::jsonb;
     UPDATE app_settings SET agent_mode = 'COPILOT' WHERE agent_mode IN ('MANUAL', 'COPILOT');

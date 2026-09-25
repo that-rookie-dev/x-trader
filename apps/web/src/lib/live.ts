@@ -183,7 +183,6 @@ function repriceLeg(
   const pnl = clientOptionPnl({ entry, exit, qty });
   const shortPnl = clientOptionPnlShort({ entry, exit, qty, exerciseIntrinsic: expiryToday ? est.intrinsicEod : 0 });
   const net = Number(pnl.net);
-  const shortNet = Number(shortPnl.net);
   const want = tradeDirection(spot, eodSpot);
   const cheap = isCheapSide(kind, strike, spot);
   const inPlay = isInPlay(kind, strike, spot, eodSpot);
@@ -192,17 +191,23 @@ function repriceLeg(
   const heldSide = leg.heldSide ?? null;
   let mark: AgentMark = "NO_BUY";
   let why = leg.why;
-  if (heldSide === "LONG") {
+  if (heldSide === "LONG" && gates.physical) {
     mark = "SELL";
-    why = "You hold long — helper wants this closed (or edge faded).";
-  } else if (heldSide === "SHORT") {
-    if (net >= gates.netFloor || shortNet < gates.netFloor) {
+    why = "Delivery week — square off this stock option before expiry. An ITM strike becomes a share obligation.";
+  } else if (heldSide === "LONG") {
+    if (net >= gates.netFloor) {
       mark = "BUY";
-      why = "You are short — cover (premium rising / write edge gone).";
+      why = `Open buy still has room — hold. Net ₹${pnl.net} if close ~${money(eodSpot)}.`;
     } else {
-      mark = "WAIT";
-      why = `Short working — keep write if premium fades to ~${money(exit)}.`;
+      mark = "SELL";
+      why =
+        net >= 0
+          ? "Open buy — book the profit. This window no longer pays enough to hold."
+          : "Open buy — exit while the loss is still small.";
     }
+  } else if (heldSide === "SHORT") {
+    mark = "BUY";
+    why = "You are short — cover. New sells are not opened.";
   } else if (!liquid) {
     why = "No tape / no OI — skip this weekly.";
     mark = "NO_BUY";
@@ -221,12 +226,9 @@ function repriceLeg(
     if (!cheap) bits.push("ITM premium");
     else if (!inPlay) bits.push("wide of EOD path");
     why = bits.join(" · ");
-  } else if (shortNet >= gates.netFloor) {
-    mark = "SELL";
-    why = `WRITE ${sideNow} ${kind} · net ₹${shortPnl.net} if buy back ~${money(exit)}`;
   } else {
     mark = "NO_BUY";
-    if (want && want !== kind) why = `Index leans ${want}. Buy net ₹${pnl.net} / write net ₹${shortPnl.net}.`;
+    if (want && want !== kind) why = `Index leans ${want}. This ${kind} is not expected to pay after charges (buy net ₹${pnl.net}).`;
     else why = "Expected EOD move does not cover charges.";
   }
   if (!heldSide && gates.cutoff) {
@@ -248,7 +250,6 @@ function repriceLeg(
     canPaper:
       !gates.cutoff &&
       ((mark === "BUY" && heldSide == null) ||
-        (mark === "SELL" && heldSide == null) ||
         (heldSide === "LONG" && mark === "SELL") ||
         (heldSide === "SHORT" && mark === "BUY")),
     heldSide,

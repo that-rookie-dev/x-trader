@@ -17,6 +17,22 @@ export const PAPER_RUPEE_STOP = 2000;
 export const PAPER_DAY_STOP = 3000;
 
 const BLOCKED_COMPARE = new Set(["OPPOSED", "MIXED", "STRETCH"]);
+/** First three clocks. The buy has to make sense across this window, not one 15-minute print. */
+export const WINDOW_HORIZONS = ["5m", "15m", "30m"] as const;
+export type WindowHorizon = (typeof WINDOW_HORIZONS)[number];
+
+export function windowScore(nets: Array<number | null | undefined>): { net: number; hold: WindowHorizon } | null {
+  const rows = WINDOW_HORIZONS.map((id, index) => ({ id, net: nets[index] })).filter(
+    (row): row is { id: WindowHorizon; net: number } => row.net != null && Number.isFinite(row.net),
+  );
+  if (rows.length < 2) return null;
+  const winners = rows.filter((row) => row.net > 0);
+  if (winners.length === 0) return null;
+  const far = rows.find((row) => row.id === "30m") ?? rows[rows.length - 1]!;
+  if (far.net < 0 && winners.length < 2) return null;
+  const hold = far.net > 0 ? far : winners.reduce((best, row) => (row.net > best.net ? row : best));
+  return { net: hold.net, hold: hold.id };
+}
 
 export function shouldCutLong(input: {
   entry: number;
@@ -103,10 +119,10 @@ export class PaperAutopilot {
     private readonly log: Logger,
   ) {}
 
-  async readFocus(): Promise<{ exchange: string; symbol: string } | null> {
+  async readLock(): Promise<{ exchange: string; symbol: string } | null> {
     const [row] = await this.db.select().from(appSettings).limit(1);
-    if (!row?.activeOptionsExchange || !row.activeOptionsSymbol) return null;
-    return { exchange: row.activeOptionsExchange, symbol: row.activeOptionsSymbol };
+    if (!row?.paperAutopilot || !row.autopilotExchange || !row.autopilotSymbol) return null;
+    return { exchange: row.autopilotExchange, symbol: row.autopilotSymbol };
   }
 
   async onOptionsBoard(board: BoardLike, allowBuy = false): Promise<void> {
@@ -130,14 +146,12 @@ export class PaperAutopilot {
     const leg = board.rows.flatMap((r) => [r.ce, r.pe]).find((l) => l?.symbol === idea.contract);
     if (!leg || leg.mark !== "BUY" || !leg.lastPrice) return;
     const lot = Math.max(1, Number(leg.lotSize ?? 1));
-    const hold = board.horizons?.find((row) => row.id === "15m");
-    let exitPremium = leg.eodPremium ?? null;
-    let targetAt = horizonTarget(new Date(), "15m").at.toISOString();
-    if (hold) {
-      if (hold.abstain) return;
-      const row = board.rows.find((item) => item.ce?.symbol === idea.contract || item.pe?.symbol === idea.contract);
-      if (!row) return;
-      const kind = row.ce?.symbol === idea.contract ? "CE" : "PE";
+    const row = board.rows.find((item) => item.ce?.symbol === idea.contract || item.pe?.symbol === idea.contract);
+    if (!row) return;
+    const kind = row.ce?.symbol === idea.contract ? "CE" : "PE";
+    const nets = WINDOW_HORIZONS.map((id) => {
+      const hold = board.horizons?.find((item) => item.id === id);
+      if (!hold || hold.abstain) return null;
       const est = estimateOptionEod({
         kind,
         strike: row.strike,
@@ -148,11 +162,24 @@ export class PaperAutopilot {
         targetAt: new Date(hold.targetAt),
         futurePx: board.future?.lastPrice != null ? Number(board.future.lastPrice) : null,
       });
-      const net = Number(optionPnl({ entry: Number(leg.lastPrice), exit: Number(est.eodPremium), qty: lot }).net);
-      if (!(net >= 150 * hold.floorScale)) return;
-      exitPremium = est.eodPremium;
-      targetAt = hold.targetAt;
-    }
+      return Number(optionPnl({ entry: Number(leg.lastPrice), exit: Number(est.eodPremium), qty: lot }).net);
+    });
+    const window = windowScore(nets);
+    if (!window) return;
+    const chosen = board.horizons?.find((item) => item.id === window.hold);
+    const exitPremium = chosen
+      ? estimateOptionEod({
+          kind,
+          strike: row.strike,
+          spot: Number(board.lastPrice),
+          eodSpot: Number(chosen.close),
+          premium: Number(leg.lastPrice),
+          expiry: board.expiry ?? null,
+          targetAt: new Date(chosen.targetAt),
+          futurePx: board.future?.lastPrice != null ? Number(board.future.lastPrice) : null,
+        }).eodPremium
+      : (leg.eodPremium ?? null);
+    const targetAt = chosen?.targetAt ?? horizonTarget(new Date(), window.hold).at.toISOString();
     try {
       await this.trainer.open({
         exchange: idea.exchange,
@@ -164,13 +191,13 @@ export class PaperAutopilot {
         regime: board.desk?.regime ?? "UNKNOWN",
         source: "autopilot",
         prediction: {
-          eodSpot: hold?.close ?? board.eod?.close ?? null,
+          eodSpot: chosen?.close ?? board.eod?.close ?? null,
           eodPremium: exitPremium,
           entrySpot: board.lastPrice ?? null,
           compareTag: compare,
           aiConfidence: board.ai?.confidence ?? null,
           why: idea.why ?? leg.why ?? null,
-          horizon: "15m",
+          horizon: window.hold,
           targetAt,
         },
       });

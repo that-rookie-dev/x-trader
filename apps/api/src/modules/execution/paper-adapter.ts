@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { AppError, d, money, type ApprovedTrade, type ExecutionAcknowledgement } from "@xtrader/domain";
 import type { Database } from "../../db/client.js";
 import { executions, orders, paperAccounts, positions, quotesCache, users } from "../../db/schema.js";
+import { optionRoundTrip, shortOptionMargin } from "../forecast/charges.js";
 
 const SLIPPAGE = d("0.0005");
 const FEE_BPS = d("0.0003");
@@ -173,6 +174,11 @@ export class PaperExecutionAdapter {
     exchange: string;
     symbol: string;
     quantity: number;
+    spot?: number;
+    strike?: number;
+    kind?: "CE" | "PE";
+    index?: boolean;
+    expiryDay?: boolean;
     meta?: Record<string, unknown>;
   }): Promise<{ positionId: string; fillPx: string; fees: string; accountId: string }> {
     const account = await this.ensureAccount();
@@ -180,11 +186,22 @@ export class PaperExecutionAdapter {
     const quote = await this.quote(input.exchange, input.symbol);
     if (!quote) throw new AppError("NO_QUOTE", "No market data to fill the paper order", 422);
 
-    // Sell filled slightly worse; credit premium. Hold loose margin = 20% of notional.
+    // Sell filled slightly worse. Credit the premium. Block SPAN + exposure, not a slice of premium.
     const fill = d(quote.lastPrice).mul(d(1).minus(SLIPPAGE));
     const notional = fill.mul(input.quantity);
-    const fees = notional.mul(FEE_BPS);
-    const margin = notional.mul(d("0.20"));
+    const strike = input.strike ?? Number(input.symbol.match(/(\d{4,6})(CE|PE)$/i)?.[1] ?? 0);
+    const kind = input.kind ?? (input.symbol.toUpperCase().endsWith("CE") ? "CE" : "PE");
+    const index = input.index ?? /NIFTY|SENSEX|BANKEX/i.test(input.symbol);
+    const span = shortOptionMargin({
+      spot: input.spot ?? 0,
+      strike,
+      kind,
+      qty: input.quantity,
+      index,
+      expiryDay: input.expiryDay,
+    });
+    const fees = d(optionRoundTrip({ buyPremium: 0, sellPremium: Number(fill), qty: input.quantity }).sell.total);
+    const margin = span > 0 ? d(span) : notional.mul(d("0.20"));
     const cashNeeded = margin.plus(fees);
 
     return this.db.transaction(async (tx) => {

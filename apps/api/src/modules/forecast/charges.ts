@@ -99,6 +99,32 @@ export function optionPnl(input: { entry: number; exit: number; qty: number }): 
   };
 }
 
+/**
+ * Cash a naked short option must block. Index price-scan floor is 9.3% of spot
+ * and exposure is 2% of spot (3% when the strike is more than 10% OTM, plus 2%
+ * on expiry day). Stock scan floor is 14.2% and exposure is 3.5%. OTM distance
+ * reduces the scan. Premium is credited separately and is not part of this block.
+ */
+export function shortOptionMargin(input: {
+  spot: number;
+  strike: number;
+  kind: "CE" | "PE";
+  qty: number;
+  index: boolean;
+  expiryDay?: boolean;
+}): number {
+  const spot = input.spot;
+  const qty = Math.max(1, Math.floor(input.qty));
+  if (!(spot > 0) || !(input.strike > 0)) return 0;
+  const otm = input.kind === "PE" ? Math.max(0, spot - input.strike) : Math.max(0, input.strike - spot);
+  const scan = input.index ? 0.093 : 0.142;
+  const deep = otm / spot > 0.1;
+  let exposure = input.index ? (deep ? 0.03 : 0.02) : 0.035;
+  if (input.index && input.expiryDay) exposure += 0.02;
+  const span = Math.max(scan * spot - otm, 0);
+  return (span + exposure * spot) * qty;
+}
+
 /** STT the writer pays if an ITM option expires instead of being bought back. Intrinsic points, not premium. */
 export function exerciseStt(intrinsic: number, qty: number): number {
   return Math.max(0, intrinsic) * Math.max(1, Math.floor(qty)) * OPTION_CHARGE_RATES.sttExercisePct;

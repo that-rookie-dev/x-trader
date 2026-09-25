@@ -392,7 +392,6 @@ export function eodTradeView(input: {
   const pnl = optionPnl({ entry, exit, qty });
   const shortPnl = optionPnlShort({ entry, exit, qty, exerciseIntrinsic: expiryToday ? intrinsicEod : 0 });
   const net = Number(pnl.net);
-  const shortNet = Number(shortPnl.net);
   const physical = input.underlying ? inPhysicalWindow(input.underlying, input.expiry, now) : false;
   const want = tradeDirection(input.spot, input.eodSpot);
   const cheap = isCheapSide(input.kind, input.strike, input.spot);
@@ -413,17 +412,20 @@ export function eodTradeView(input: {
   if (heldSide === "LONG" && physical) {
     mark = "SELL";
     why = "Delivery week — square off this stock option before expiry. An ITM strike becomes a share obligation.";
-  } else if (heldSide === "LONG" && (input.existing === "SELL" || shortNet >= floor || net < floor * 0.5)) {
-    mark = "SELL";
-    why = "You hold long — helper wants this closed (or edge faded).";
-  } else if (heldSide === "SHORT") {
-    if (net >= floor || shortNet < floor) {
+  } else if (heldSide === "LONG") {
+    if (net >= floor) {
       mark = "BUY";
-      why = "You are short — cover (premium rising / write edge gone).";
+      why = `Open buy still has room — hold. Net ₹${pnl.net} if close ~${money(input.eodSpot, 2)}.`;
     } else {
-      mark = "WAIT";
-      why = `Short working — keep write if premium fades to ~${money(exit, 2)}.`;
+      mark = "SELL";
+      why =
+        net >= 0
+          ? "Open buy — book the profit. This window no longer pays enough to hold."
+          : "Open buy — exit while the loss is still small.";
     }
+  } else if (heldSide === "SHORT") {
+    mark = "BUY";
+    why = "You are short — cover. New sells are not opened.";
   } else if (!liquid) {
     why = "No tape / no OI — skip this weekly.";
   } else if (invalidated) {
@@ -431,8 +433,6 @@ export function eodTradeView(input: {
     mark = input.existing === "WAIT" ? "WAIT" : "NO_BUY";
   } else if (physical) {
     why = "Stock F&O is inside the physical-delivery week. Square off before expiry; do not open a new option.";
-  } else if (input.richIv && net >= floor) {
-    why = "IV is rich vs realized vol — premium is expensive to buy; prefer a write only if short edge clears the floor.";
   } else if (net >= floor) {
     mark = "BUY";
     const bits = [
@@ -445,26 +445,17 @@ export function eodTradeView(input: {
     if (!cheap) bits.push("ITM premium");
     else if (!inPlay) bits.push("wide of EOD path");
     if (input.adxAgainst) bits.push("ADX against");
-    why = bits.join(" · ");
-  } else if (shortNet >= floor) {
-    // Write / short: premium expected to fade after charges.
-    mark = "SELL";
-    const bits = [
-      `WRITE ${sideNow} ${input.kind}`,
-      `net ₹${shortPnl.net} if buy back ~${money(exit, 2)}`,
-    ];
     if (input.richIv) bits.push("rich IV");
-    if (want && want !== input.kind) bits.push(`${want} lean helps write`);
     why = bits.join(" · ");
   } else if (input.richIv) {
-    why = "IV is rich vs realized vol — premium is expensive to buy; write edge also thin.";
+    why = "IV is rich vs realized vol — premium is expensive to buy.";
   } else if (input.existing === "WAIT") {
     mark = "WAIT";
     why = "Waiting for a clearer EOD close.";
   } else if (want && want !== input.kind) {
-    why = `Index leans ${want}. This ${input.kind} is not expected to pay after charges (buy net ₹${pnl.net}, write net ₹${shortPnl.net}).`;
+    why = `Index leans ${want}. This ${input.kind} is not expected to pay after charges (buy net ₹${pnl.net}).`;
   } else if (!cheap) {
-    why = `${sideNow} ${input.kind} — buy net ₹${pnl.net} / write net ₹${shortPnl.net} under ₹${floor} floor.`;
+    why = `${sideNow} ${input.kind} — buy net ₹${pnl.net} under ₹${floor} floor.`;
   } else if (!inPlay) {
     why = `Too far from the EOD path — buy net ₹${pnl.net}.`;
   }

@@ -106,6 +106,13 @@ export class AgentLoop {
     const pool = watch
       .map((w) => byKey.get(`${w.exchange.toUpperCase()}:${w.symbol.toUpperCase()}`))
       .filter((n): n is FnoUnderlying => Boolean(n && n.nextExpiry));
+    const focus = this.autopilot ? await this.autopilot.readLock() : null;
+    if (focus) {
+      const key = `${focus.exchange.toUpperCase()}:${focus.symbol.toUpperCase()}`;
+      const already = pool.some((n) => `${n.exchange.toUpperCase()}:${n.symbol.toUpperCase()}` === key);
+      const extra = byKey.get(key);
+      if (!already && extra?.nextExpiry) pool.push(extra);
+    }
 
     if (!pool.length) {
       this.training?.setTracked(0, 0);
@@ -125,7 +132,6 @@ export class AgentLoop {
     const remaining = Math.max(0, pool.length - this.scanDone);
     const batch = Math.min(SCAN_BATCH, remaining);
     this.training?.setTracked(pool.length, this.scanDone);
-    const focus = this.autopilot ? await this.autopilot.readFocus() : null;
     const deps = {
       db: this.db,
       market: this.market,
@@ -139,6 +145,21 @@ export class AgentLoop {
       forecastParams: this.forecastParams,
       research: this.research,
     };
+    if (this.autopilot && focus) {
+      const locked = byKey.get(`${focus.exchange.toUpperCase()}:${focus.symbol.toUpperCase()}`);
+      if (locked?.nextExpiry) {
+        try {
+          const board = await buildOptionsBoard(deps, {
+            exchange: locked.exchange,
+            symbol: locked.symbol,
+            expiry: locked.nextExpiry,
+          });
+          await this.autopilot.onOptionsBoard(board, true);
+        } catch (err) {
+          this.log.debug({ err, symbol: locked.symbol }, "paper autopilot options failed");
+        }
+      }
+    }
     for (let i = 0; i < batch; i += 1) {
       const desk = pool[this.scanDone];
       if (!desk?.exchange || !desk.symbol) {
@@ -158,11 +179,6 @@ export class AgentLoop {
           ok: true,
           detail: `EOD ${board.eod?.close ?? "—"} · mode ${board.predictionMode ?? "ALGO"}`,
         });
-        if (this.autopilot && focus && desk.exchange.toUpperCase() === focus.exchange.toUpperCase() && desk.symbol.toUpperCase() === focus.symbol.toUpperCase()) {
-          await this.autopilot.onOptionsBoard(board, true).catch((err) =>
-            this.log.debug({ err, symbol: desk.symbol }, "paper autopilot options failed"),
-          );
-        }
       } catch (err) {
         this.training?.noteScan({
           exchange: desk.exchange,

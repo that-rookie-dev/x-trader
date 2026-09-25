@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { optionPnl, optionRoundTrip } from "./charges.js";
+import { optionPnl, optionRoundTrip, shortOptionMargin } from "./charges.js";
 import { applyAiStudy, compareEod, eodTradeView, estimateOptionEod, pickStructureMagnet, predictEodSpot } from "./eod.js";
 
 describe("option charges", () => {
@@ -10,6 +10,14 @@ describe("option charges", () => {
     expect(Number(trip.buy.stamp)).toBeGreaterThan(0);
     expect(Number(trip.sell.stamp)).toBe(0);
     expect(Number(trip.total)).toBeGreaterThan(Number(trip.buy.total));
+  });
+
+  it("blocks index short margin at the 9.3% scan plus 2% exposure, above the premium", () => {
+    const qty = 30;
+    const spot = 62212;
+    const margin = shortOptionMargin({ spot, strike: 62800, kind: "PE", qty, index: true });
+    expect(margin).toBeCloseTo((0.093 + 0.02) * spot * qty, 0);
+    expect(margin).toBeGreaterThan(1100 * qty);
   });
 
   it("nets premium gain minus round-trip charges", () => {
@@ -139,7 +147,7 @@ describe("profitable option buys", () => {
     expect(otm.mark).toBe("BUY");
   });
 
-  it("does not buy CE on a bearish close when buy fails the floor (may write instead)", () => {
+  it("does not buy or write a CE when the close is bearish and the buy fails the floor", () => {
     const ce = eodTradeView({
       kind: "CE",
       strike: 1010,
@@ -153,9 +161,8 @@ describe("profitable option buys", () => {
       now: OPEN,
     });
     expect(ce.mark).not.toBe("BUY");
-    expect(["SELL", "NO_BUY", "WAIT"]).toContain(ce.mark);
-    if (ce.mark === "SELL") expect(ce.why).toMatch(/WRITE/i);
-    else expect(ce.why).toMatch(/leans PE|not expected to pay|does not cover|under/i);
+    expect(ce.mark).not.toBe("SELL");
+    expect(ce.why).toMatch(/leans PE|not expected to pay|does not cover|under/i);
   });
 });
 

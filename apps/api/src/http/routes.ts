@@ -85,6 +85,8 @@ export function registerRoutes(app: Express, s: AppServices): void {
           ordersEnabled: false,
           haltActive: settings.haltActive,
           paperAutopilot: settings.paperAutopilot,
+          autopilotExchange: settings.autopilotExchange,
+          autopilotSymbol: settings.autopilotSymbol,
           predictionMode: hasAiProfile ? settings.predictionMode : "ALGO",
           paperCash: settings.paperCash,
           paperOpenCount: settings.paperOpenCount,
@@ -334,8 +336,26 @@ export function registerRoutes(app: Express, s: AppServices): void {
     "/api/settings/autopilot",
     authOptional,
     asyncHandler(async (req, res) => {
-      const body = z.object({ enabled: z.boolean() }).parse(req.body);
-      const settings = await s.gate.patch({ paperAutopilot: body.enabled });
+      const body = z
+        .object({ enabled: z.boolean(), exchange: z.string().min(1).optional(), symbol: z.string().min(1).optional() })
+        .parse(req.body);
+      const current = await s.gate.snapshot();
+      if (body.enabled) {
+        if (!body.exchange || !body.symbol) throw new AppError("AUTOPILOT_SYMBOL", "Choose the symbol Autopilot should follow.", 422);
+        const locked =
+          current.paperAutopilot &&
+          current.autopilotSymbol &&
+          (current.autopilotSymbol.toUpperCase() !== body.symbol.toUpperCase() ||
+            (current.autopilotExchange ?? "").toUpperCase() !== body.exchange.toUpperCase());
+        if (locked) {
+          throw new AppError("AUTOPILOT_BUSY", `Autopilot is already on for ${current.autopilotSymbol}. Turn it off there first.`, 409);
+        }
+      }
+      const settings = await s.gate.patch({
+        paperAutopilot: body.enabled,
+        autopilotExchange: body.enabled ? (body.exchange ?? null) : null,
+        autopilotSymbol: body.enabled ? (body.symbol ?? null) : null,
+      });
       res.json(settings);
     }),
   );
@@ -1014,6 +1034,8 @@ export function registerRoutes(app: Express, s: AppServices): void {
         paper: {
           cash: paper.account.cash,
           paperAutopilot: settings.paperAutopilot,
+          autopilotExchange: settings.autopilotExchange,
+          autopilotSymbol: settings.autopilotSymbol,
           positions: paper.positions,
           closed: paper.closed,
           marketClosed: marketBlocksPaper(),

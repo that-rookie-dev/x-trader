@@ -36,6 +36,8 @@ export class LiveGate {
       haltReason: settings?.haltReason ?? null,
       activeAiProfileId: settings?.activeAiProfileId ?? null,
       paperAutopilot: settings?.paperAutopilot ?? false,
+      autopilotExchange: settings?.autopilotExchange ?? null,
+      autopilotSymbol: settings?.autopilotSymbol ?? null,
       activeOptionsExchange: settings?.activeOptionsExchange ?? null,
       activeOptionsSymbol: settings?.activeOptionsSymbol ?? null,
       newsSlotMinutes: settings?.newsSlotMinutes === 30 || settings?.newsSlotMinutes === 60 ? settings.newsSlotMinutes : 15,
@@ -65,6 +67,8 @@ export class LiveGate {
     haltReason: string | null;
     activeAiProfileId: string | null;
     paperAutopilot: boolean;
+    autopilotExchange: string | null;
+    autopilotSymbol: string | null;
     predictionMode: PredictionModeSetting;
     activeOptionsExchange: string | null;
     activeOptionsSymbol: string | null;
@@ -79,6 +83,8 @@ export class LiveGate {
         ...(input.haltReason !== undefined ? { haltReason: input.haltReason } : {}),
         ...(input.activeAiProfileId !== undefined ? { activeAiProfileId: input.activeAiProfileId } : {}),
         ...(input.paperAutopilot != null ? { paperAutopilot: input.paperAutopilot } : {}),
+        ...(input.autopilotExchange !== undefined ? { autopilotExchange: input.autopilotExchange } : {}),
+        ...(input.autopilotSymbol !== undefined ? { autopilotSymbol: input.autopilotSymbol } : {}),
         ...(input.activeOptionsExchange !== undefined ? { activeOptionsExchange: input.activeOptionsExchange } : {}),
         ...(input.activeOptionsSymbol !== undefined ? { activeOptionsSymbol: input.activeOptionsSymbol } : {}),
         ...(input.newsSlotMinutes != null ? { newsSlotMinutes: input.newsSlotMinutes === 30 || input.newsSlotMinutes === 60 ? input.newsSlotMinutes : 15 } : {}),

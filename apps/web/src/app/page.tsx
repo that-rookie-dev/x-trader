@@ -5,7 +5,7 @@ import { StudyBar } from "@/components/StudyBar";
 import { StudyTracePanel, type StudyPhase } from "@/components/StudyTracePanel";
 import type { DeskName } from "@/components/NamePicker";
 import { api } from "@/lib/api";
-import { clientOptionPnl, clientOptionPnlShort } from "@/lib/charges";
+import { clientOptionPnl, clientOptionPnlShort, shortOptionMargin } from "@/lib/charges";
 import type { AgentMark, ChainLeg, OptionsBoard, QuoteTick } from "@/lib/desk";
 import { showCompactRupee, showDec, showPct, showRupee, showSignedRupee } from "@/lib/format";
 import { applyHorizon, applyLiveQuotes, applyTickCandle, horizonCloseNow, mergeCandles, quotesFromBoard } from "@/lib/live";
@@ -106,6 +106,7 @@ export default function OptionsPage() {
   const [studying, setStudying] = useState(false);
   const [stage, setStage] = useState<"chain" | "chart">("chain");
   const [autopilot, setAutopilot] = useState(false);
+  const [autopilotLock, setAutopilotLock] = useState<{ exchange: string; symbol: string } | null>(null);
   const [traceOpen, setTraceOpen] = useState(false);
   const [tracePhases, setTracePhases] = useState<StudyPhase[]>([]);
   const [tracePrompt, setTracePrompt] = useState<{ system: string; prompt: string } | null>(null);
@@ -137,8 +138,12 @@ export default function OptionsPage() {
   }, []);
 
   useEffect(() => {
-    void api<{ settings?: { paperAutopilot?: boolean } }>("/api/bootstrap")
-      .then((data) => setAutopilot(Boolean(data.settings?.paperAutopilot)))
+    void api<{ settings?: { paperAutopilot?: boolean; autopilotExchange?: string | null; autopilotSymbol?: string | null } }>("/api/bootstrap")
+      .then((data) => {
+        setAutopilot(Boolean(data.settings?.paperAutopilot));
+        const locked = data.settings?.autopilotExchange && data.settings?.autopilotSymbol;
+        setAutopilotLock(locked ? { exchange: data.settings!.autopilotExchange!, symbol: data.settings!.autopilotSymbol! } : null);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -419,6 +424,10 @@ export default function OptionsPage() {
       : null;
 
   const showChainErr = Boolean(board?.marketClosed);
+  const lockedHere = Boolean(
+    autopilot && autopilotLock && autopilotLock.symbol.toUpperCase() === symbol.toUpperCase() && autopilotLock.exchange.toUpperCase() === exchange.toUpperCase(),
+  );
+  const lockedElsewhere = Boolean(autopilot && autopilotLock && !lockedHere);
 
   return (
     <div className="desk-fit">
@@ -522,18 +531,28 @@ export default function OptionsPage() {
               ) : null}
               <button
                 type="button"
-                className={`stage-tab ${autopilot ? "on" : ""}`}
-                title="Paper only, and only the symbol open on this page. Keeps running if you leave."
+                className={`stage-tab ${lockedHere ? "on" : ""}`}
+                disabled={lockedElsewhere}
+                title={
+                  lockedElsewhere
+                    ? `Autopilot is on for ${autopilotLock?.symbol}. Turn it off there before using another symbol.`
+                    : "Paper buys only, on this symbol. Stays here until you turn it off."
+                }
                 onClick={() => {
-                  const enabled = !autopilot;
+                  if (lockedElsewhere || !symbol || !exchange) return;
+                  const enabled = !lockedHere;
                   setAutopilot(enabled);
+                  setAutopilotLock(enabled ? { exchange, symbol } : null);
                   void api("/api/settings/autopilot", {
                     method: "POST",
-                    body: JSON.stringify({ enabled }),
-                  }).catch(() => setAutopilot(!enabled));
+                    body: JSON.stringify({ enabled, exchange, symbol }),
+                  }).catch(() => {
+                    setAutopilot(!enabled);
+                    setAutopilotLock(lockedHere ? { exchange, symbol } : autopilotLock);
+                  });
                 }}
               >
-                {autopilot ? "AUTOPILOT ON" : "AUTOPILOT"}
+                {lockedHere ? "AUTOPILOT ON" : lockedElsewhere ? `ON ${autopilotLock?.symbol}` : "AUTOPILOT"}
               </button>
               </div>
             </div>
@@ -784,9 +803,26 @@ function PnlBox({
       : clientOptionPnl({ entry, exit, qty })
     : null;
   const net = pnl ? Number(pnl.net) : 0;
+  const spot = Number(board?.lastPrice ?? 0);
+  const strike = Number(strikeFromSymbol(leg.symbol));
+  const indexName = `${board?.symbol ?? ""} ${leg.symbol}`;
+  const index = /NIFTY|SENSEX|BANKEX/i.test(indexName);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const expiryDay = Boolean(board?.expiry && board.expiry.slice(0, 10) === today);
+  const blocked =
+    useShort && (kind === "CE" || kind === "PE")
+      ? shortOptionMargin({
+          spot,
+          strike,
+          kind,
+          qty,
+          index,
+          expiryDay,
+        })
+      : 0;
   const spend = pnl
     ? useShort
-      ? Number(pnl.sellNotional) - Number(pnl.charges.sell.total)
+      ? blocked + Number(pnl.charges.sell.total)
       : Number(pnl.buyNotional) + Number(pnl.charges.buy.total)
     : 0;
   const back = pnl
@@ -831,6 +867,7 @@ function PnlBox({
             compareTag: board?.compare?.tag ?? null,
             aiConfidence: board?.ai?.confidence ?? null,
             why: leg.why ?? null,
+            expiryDay: Boolean(board?.expiry && board.expiry.slice(0, 10) === new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })),
           },
         }),
       });
@@ -945,8 +982,10 @@ function PnlBox({
 
       <div className="pnl-ledger">
         <div className="pnl-row">
-          <span>{useShort ? "CREDIT" : "SPEND"}</span>
-          <b className="mono num-slot">{showRupee(spend)}</b>
+          <span>{useShort ? "MARGIN" : "SPEND"}</span>
+          <b className="mono num-slot" title={useShort ? "SPAN + exposure blocked to sell, plus this order’s charges" : "Premium plus buy charges"}>
+            {showRupee(spend)}
+          </b>
         </div>
         <div className="pnl-row">
           <span>{useShort ? "BUYBACK" : "BACK"}</span>

@@ -25,6 +25,7 @@ export type TrainBuyInput = {
     why?: string | null;
     horizon?: string | null;
     targetAt?: string | null;
+    expiryDay?: boolean | null;
   };
 };
 
@@ -71,6 +72,11 @@ export class PaperTrainer {
             exchange: input.exchange,
             symbol: input.symbol,
             quantity: input.quantity,
+            spot: input.prediction?.entrySpot != null ? Number(input.prediction.entrySpot) : undefined,
+            strike: Number(input.symbol.match(/(\d{4,6})(CE|PE)$/i)?.[1] ?? 0) || undefined,
+            kind: input.kind === "CE" || input.kind === "PE" ? input.kind : undefined,
+            index: /NIFTY|SENSEX|BANKEX/i.test(`${input.symbol}`),
+            expiryDay: Boolean(input.prediction?.expiryDay),
             meta,
           })
         : await this.paper.buyLong({
