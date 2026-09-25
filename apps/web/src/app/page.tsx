@@ -715,7 +715,8 @@ function LegCells({
       : null;
   const netCell = (edge?: "start" | "end") =>
     cell(`num mono ${flashClass(net)}`, leg?.pnl ? showCompactRupee(leg.pnl.net) : "—", edge);
-  const mark = (edge?: "start" | "end") => cell("mark-cell", leg ? <Mark mark={leg.mark} /> : null, edge);
+  const mark = (edge?: "start" | "end") =>
+    cell("mark-cell", leg ? <Mark mark={leg.mark} closing={leg.heldSide === "LONG" && leg.mark === "SELL"} /> : null, edge);
 
   // Mirror: CE LTP→MARK · PE MARK→LTP
   return side === "CE" ? (
@@ -1091,8 +1092,8 @@ function strikeFromSymbol(symbol: string) {
   return m ? m[1] : symbol.slice(-10);
 }
 
-function Mark({ mark }: { mark: AgentMark }) {
-  const label = mark === "NO_BUY" ? "NA" : mark;
+function Mark({ mark, closing }: { mark: AgentMark; closing?: boolean }) {
+  const label = closing ? "CLOSE" : mark === "NO_BUY" ? "NA" : mark;
   return <span className={`mark ${mark.toLowerCase()}`}>{label}</span>;
 }
 

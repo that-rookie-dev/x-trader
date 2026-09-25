@@ -420,8 +420,8 @@ export function eodTradeView(input: {
       mark = "SELL";
       why =
         net >= 0
-          ? "Open buy — book the profit. This window no longer pays enough to hold."
-          : "Open buy — exit while the loss is still small.";
+          ? "Close this buy — book the profit. This window no longer pays enough to hold."
+          : "Close this buy — the loss is still small.";
     }
   } else if (heldSide === "SHORT") {
     mark = "BUY";
