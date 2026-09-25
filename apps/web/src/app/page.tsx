@@ -49,19 +49,33 @@ function liveBuyBook(buys: OpenBuy[], board: OptionsBoard | null): { lines: BuyL
   return { lines, total: marked.reduce((sum, line) => sum + (line.pnl ?? 0), 0), marked: marked.length };
 }
 
+function istDay(at: string | Date): string {
+  return new Date(at).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
 function OpenPnl({
   book,
   cash,
   notice,
+  closed,
 }: {
   book: { lines: BuyLine[]; total: number; marked: number };
   cash: string | null;
   notice: string | null;
+  closed: Array<{ closedAt?: string | null; realisedPnl?: string | null }>;
 }) {
   const live = book.marked > 0;
   const tone = !live ? "" : book.total > 0 ? "up" : book.total < 0 ? "down" : "";
   const low = cash != null && Number(cash) < 500;
   const figure = notice ?? (live ? showSignedRupee(book.total) : "No open buy");
+  const today = istDay(new Date());
+  const realised = closed.reduce((sum, row) => {
+    if (!row.closedAt || istDay(row.closedAt) !== today) return sum;
+    const pnl = Number(row.realisedPnl ?? 0);
+    return Number.isFinite(pnl) ? sum + pnl : sum;
+  }, 0);
+  const day = realised + (live ? book.total : 0);
+  const dayTone = day > 0 ? "up" : day < 0 ? "down" : "";
   return (
     <div className="pnl-book" data-coach="votes">
       <section className={`pnl-book-cell ${low ? "down" : ""}`} title="Paper wallet">
@@ -73,6 +87,10 @@ function OpenPnl({
       <section className={`pnl-book-cell ${tone}`} title="Live value of open paper buys. Each tick reprices the contract.">
         <span>OPEN P&L</span>
         <strong className={`mono ${live ? "" : "idle"}`}>{figure}</strong>
+      </section>
+      <section className={`pnl-book-cell ${dayTone}`} title="Profit or loss booked today, plus any open buy still marked. Stays until the session day ends.">
+        <span>TODAY</span>
+        <strong className="mono">{showSignedRupee(day)}</strong>
       </section>
     </div>
   );
@@ -115,6 +133,7 @@ export default function OptionsPage() {
   const [traceStatus, setTraceStatus] = useState<string | null>(null);
   const [openBuys, setOpenBuys] = useState<OpenBuy[]>([]);
   const [paperCash, setPaperCash] = useState<string | null>(null);
+  const [dayClosed, setDayClosed] = useState<Array<{ closedAt?: string | null; realisedPnl?: string | null }>>([]);
 
   useEffect(() => {
     void api<{ names: Name[]; desk?: { exchange: string; symbol: string; expiry: string | null } | null }>(
@@ -265,10 +284,12 @@ export default function OptionsPage() {
       api<{
         cash?: string;
         positions: Array<{ id: string; exchange: string; symbol: string; direction: string; quantity: string; averageEntry: string; currentPrice?: string | null }>;
+        closed?: Array<{ closedAt?: string | null; realisedPnl?: string | null }>;
       }>("/api/paper")
         .then((state) => {
           if (!alive) return;
           if (state.cash != null) setPaperCash(state.cash);
+          setDayClosed(state.closed ?? []);
           setOpenBuys(
             state.positions
               .filter((row) => row.direction === "LONG")
@@ -650,6 +671,7 @@ export default function OptionsPage() {
             book={book}
             cash={paperCash}
             notice={error ?? status}
+            dayClosed={dayClosed}
             onBusy={setStatus}
           />
         ) : (
@@ -749,6 +771,7 @@ function PnlBox({
   book,
   cash,
   notice,
+  dayClosed,
   onBusy,
 }: {
   leg: ChainLeg;
@@ -761,6 +784,7 @@ function PnlBox({
   book: { lines: BuyLine[]; total: number; marked: number };
   cash: string | null;
   notice: string | null;
+  dayClosed: Array<{ closedAt?: string | null; realisedPnl?: string | null }>;
   onBusy: (msg: string | null) => void;
 }) {
   const [paperPos, setPaperPos] = useState<{ id: string; direction: string } | null>(null);
@@ -1043,7 +1067,7 @@ function PnlBox({
         </button>
       </div>
       <div className="pnl-rule" />
-      <OpenPnl book={book} cash={cash} notice={notice} />
+      <OpenPnl book={book} cash={cash} notice={notice} closed={dayClosed} />
     </aside>
   );
 }

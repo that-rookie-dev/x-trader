@@ -1743,7 +1743,7 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
   gap: 8px;
   margin-top: 8px;
 }
@@ -1751,10 +1751,10 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   min-height: 0;
-  padding: 12px 14px;
+  padding: 8px 14px;
   border: 1px solid var(--line);
   background: var(--bg);
   overflow: hidden;
@@ -1766,7 +1766,7 @@ label.muted { display: block; margin: 8px 0 4px; font-size: var(--fs-meta); }
   color: var(--muted);
 }
 .pnl-book-cell strong {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 650;
   letter-spacing: -0.03em;
   line-height: 1;
